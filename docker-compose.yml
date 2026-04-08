@@ -1,0 +1,16 @@
+services:
+  pastebin:
+    image: ghcr.io/gfreezy/pastebin:main
+    # build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - PASTEBIN_USER=admin
+      - PASTEBIN_PASS=admin
+      - PASTEBIN_BASE_URL=https://pastebin.allsunday.io
+    volumes:
+      - pastebin-data:/data
+    restart: unless-stopped
+
+volumes:
+  pastebin-data:

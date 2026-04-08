@@ -38,9 +38,15 @@ Docker
 docker pull ghcr.io/gfreezy/pastebin:main
 ```
 
-> Replace `OWNER` with your GitHub username or org.
+### Docker Compose (recommended)
 
-### Run
+```
+docker compose up -d
+```
+
+Edit `docker-compose.yml` to change `PASTEBIN_USER` / `PASTEBIN_PASS` and other settings. Uncomment `build: .` to build from source instead of pulling the image.
+
+### Docker run
 
 ```
 docker run -d \
