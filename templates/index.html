@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pastebin</title>
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      color: #1a1a1a;
+      background: #fafafa;
+      margin: 0;
+      padding: 3rem 1.5rem;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 2.5rem;
+    }
+
+    h2 {
+      font-size: 0.8rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #888;
+      margin: 0 0 1rem;
+    }
+
+    /* Form */
+    .card {
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-row.three { grid-template-columns: 1fr 1fr 1fr; }
+
+    .field { display: flex; flex-direction: column; }
+
+    .field label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #666;
+      margin-bottom: 0.3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field input, .field select, .field textarea {
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #fff;
+      color: #1a1a1a;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: #999;
+    }
+
+    .field textarea {
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 0.85rem;
+      min-height: 140px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .hidden { display: none !important; }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.5rem 1.5rem;
+      border: 1px solid #1a1a1a;
+      border-radius: 5px;
+      background: #1a1a1a;
+      color: #fff;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover { opacity: 0.8; }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-icon {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.25rem;
+      color: #aaa;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      transition: color 0.15s;
+    }
+
+    .btn-icon:hover { color: #1a1a1a; }
+
+    .delete-btn:hover { color: #c0392b; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 1.5rem;
+      right: 1.5rem;
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      z-index: 100;
+      animation: slide-in 0.25s ease-out;
+      max-width: 480px;
+    }
+
+    .toast .mono { font-size: 0.8rem; word-break: break-all; }
+
+    .toast-close {
+      margin-left: auto;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #aaa;
+      font-size: 1.1rem;
+      padding: 0 0.25rem;
+    }
+
+    .toast-close:hover { color: #1a1a1a; }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #999;
+      text-align: left;
+      padding: 0 0.75rem 0.6rem;
+      border-bottom: 1px solid #e8e8e8;
+    }
+
+    tbody td {
+      padding: 0.65rem 0.75rem;
+      font-size: 0.85rem;
+      border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle;
+    }
+
+    tbody tr:hover { background: #f8f8f8; }
+
+    .mono { font-family: "SF Mono", "Fira Code", "Consolas", monospace; }
+    .text-sm { font-size: 0.78rem; }
+    .muted { color: #bbb; }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-public { background: #e8f5e9; color: #388e3c; }
+    .badge-private { background: #fff3e0; color: #e65100; }
+
+    .url-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 2.5rem 1rem !important;
+      color: #bbb;
+      font-style: italic;
+    }
+
+    .copy-ok { color: #388e3c !important; }
+
+    .custom-expiry { margin-top: 0.5rem; }
+
+    .file-drop {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1.5px dashed #ddd;
+      border-radius: 5px;
+      padding: 0.6rem 1rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .file-drop:hover, .file-drop.drag-over {
+      border-color: #999;
+      background: #f5f5f5;
+    }
+
+    .file-drop input[type="file"] { display: none; }
+
+    .file-drop-text {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2.5rem;
+    }
+
+    .nav h1 { margin: 0; }
+
+    .nav-links {
+      display: flex;
+      gap: 1.25rem;
+      align-items: center;
+    }
+
+    .nav-links a {
+      font-size: 0.78rem;
+      color: #888;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover { color: #1a1a1a; }
+
+    @media (max-width: 640px) {
+      body { padding: 1.5rem 1rem; }
+      .form-row, .form-row.three { grid-template-columns: 1fr; }
+      .url-cell { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="nav">
+    <h1>Pastebin</h1>
+    <div class="nav-links">
+      <a href="/totp-setup">TOTP</a>
+      <a href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <h2>New Paste</h2>
+  <div class="card">
+    <form id="paste-form">
+      <div class="form-row three">
+        <div class="field">
+          <label for="f-id">ID</label>
+          <input id="f-id" type="text" name="id" placeholder="auto-generated" />
+        </div>
+        <div class="field">
+          <label for="f-title">Title</label>
+          <input id="f-title" type="text" name="title" placeholder="optional" />
+        </div>
+        <div class="field">
+          <label for="f-vis">Visibility</label>
+          <select id="f-vis" name="visibility">
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" id="password-row">
+        <div class="field">
+          <label for="f-pass">Access Key</label>
+          <input id="f-pass" type="text" name="access_password" placeholder="auto-generated if empty" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label for="f-expiry">Expires</label>
+          <select id="f-expiry">
+            <option value="">Never</option>
+            <option value="3600">1 hour</option>
+            <option value="86400">1 day</option>
+            <option value="604800">7 days</option>
+            <option value="2592000">30 days</option>
+            <option value="custom">Custom...</option>
+          </select>
+          <div id="custom-expiry" class="custom-expiry hidden">
+            <input type="text" name="expires_at" placeholder="RFC 3339, e.g. 2026-01-01T00:00:00Z" />
+          </div>
+          <input type="hidden" name="expires_in" id="f-expires-in" />
+        </div>
+      </div>
+      <div class="field">
+        <label>File</label>
+        <label class="file-drop" id="file-drop">
+          <input type="file" id="f-file" />
+          <span class="file-drop-text" id="file-drop-text">Choose file or drag &amp; drop</span>
+        </label>
+      </div>
+      <div class="field">
+        <label for="f-content">Content</label>
+        <textarea id="f-content" name="content" required placeholder="paste your text here..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn" type="submit" id="submit-btn">Create</button>
+      </div>
+    </form>
+  </div>
+
+  <h2>Pastes</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Title</th>
+        <th>Visibility</th>
+        <th>Created</th>
+        <th>Expires</th>
+        <th>URL</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="paste-list">
+      {% for paste in pastes %}
+      <tr>
+        <td class="mono"><a href="/pastes/{{ paste.id }}">{{ paste.id }}</a></td>
+        <td>{{ paste.title.as_deref().unwrap_or("") }}</td>
+        <td><span class="badge badge-{{ paste.visibility }}">{{ paste.visibility }}</span></td>
+        <td><time datetime="{{ paste.created_at }}">{{ paste.created_at }}</time></td>
+        <td>
+          {% match paste.expires_at %}
+            {% when Some with (exp) %}
+              <time datetime="{{ exp }}">{{ exp }}</time>
+            {% when None %}
+              <span class="muted">&mdash;</span>
+          {% endmatch %}
+        </td>
+        <td class="url-cell">
+          <a href="{{ paste.raw_url }}" class="mono text-sm" target="_blank">/raw/{{ paste.id }}{% if paste.needs_key %}?key=...{% endif %}</a>
+          <button class="btn-icon copy-btn" data-url="{{ paste.raw_url }}" title="Copy URL">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          </button>
+        </td>
+        <td>
+          <button class="btn-icon delete-btn" data-id="{{ paste.id }}" title="Delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if pastes.is_empty() %}
+      <tr><td colspan="7" class="empty-state">No pastes yet. Create one above.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% raw %}
+<script>
+(function() {
+  // --- Visibility toggle ---
+  const vis = document.getElementById('f-vis');
+  const passRow = document.getElementById('password-row');
+  function togglePass() {
+    passRow.classList.toggle('hidden', vis.value !== 'private');
+  }
+  vis.addEventListener('change', togglePass);
+  togglePass();
+
+  // --- Expiry logic ---
+  const expSel = document.getElementById('f-expiry');
+  const customExp = document.getElementById('custom-expiry');
+  const hiddenExpIn = document.getElementById('f-expires-in');
+  expSel.addEventListener('change', function() {
+    if (this.value === 'custom') {
+      customExp.classList.remove('hidden');
+      hiddenExpIn.value = '';
+    } else {
+      customExp.classList.add('hidden');
+      hiddenExpIn.value = this.value;
+      customExp.querySelector('input').value = '';
+    }
+  });
+
+  // --- Form submit ---
+  const form = document.getElementById('paste-form');
+  const submitBtn = document.getElementById('submit-btn');
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+
+    const fd = new FormData(form);
+    if (expSel.value && expSel.value !== 'custom') {
+      fd.set('expires_in', expSel.value);
+      fd.delete('expires_at');
+    } else if (expSel.value === 'custom') {
+      fd.delete('expires_in');
+    } else {
+      fd.delete('expires_in');
+      fd.delete('expires_at');
+    }
+
+    try {
+      const res = await fetch('/api/pastes', { method: 'POST', body: new URLSearchParams(fd) });
+      if (!res.ok) {
+        const text = await res.text();
+        alert('Error: ' + text);
+        return;
+      }
+      const data = await res.json();
+      showToast(data.raw_url);
+      form.reset();
+      togglePass();
+      expSel.value = '';
+      customExp.classList.add('hidden');
+      hiddenExpIn.value = '';
+      location.reload();
+    } catch(err) {
+      alert('Network error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create';
+    }
+  });
+
+  // --- Toast ---
+  function showToast(url) {
+    const old = document.querySelector('.toast');
+    if (old) old.remove();
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = '<span style="color:#388e3c;font-weight:500">Created</span>'
+      + '<span class="mono">' + escapeHtml(url) + '</span>'
+      + '<button class="btn-icon copy-btn" data-url="' + escapeAttr(url) + '" title="Copy">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+      + '</button>'
+      + '<button class="toast-close">&times;</button>';
+    document.body.appendChild(t);
+    t.querySelector('.toast-close').addEventListener('click', () => t.remove());
+    t.querySelector('.copy-btn').addEventListener('click', function() { copyUrl(this); });
+    setTimeout(() => { if (t.parentNode) t.remove(); }, 12000);
+  }
+
+  // --- Copy ---
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.copy-btn');
+    if (btn) copyUrl(btn);
+  });
+
+  function copyUrl(btn) {
+    const url = btn.dataset.url;
+    navigator.clipboard.writeText(url).then(() => {
+      btn.classList.add('copy-ok');
+      setTimeout(() => btn.classList.remove('copy-ok'), 1500);
+    });
+  }
+
+  // --- Delete ---
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.delete-btn');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (!confirm('Delete paste ' + id + '?')) return;
+    fetch('/api/pastes/' + encodeURIComponent(id), { method: 'DELETE' })
+      .then(res => {
+        if (res.ok) {
+          btn.closest('tr').remove();
+          if (!document.querySelector('#paste-list tr')) {
+            document.getElementById('paste-list').innerHTML =
+              '<tr><td colspan="7" class="empty-state">No pastes yet. Create one above.</td></tr>';
+          }
+        } else {
+          alert('Delete failed');
+        }
+      });
+  });
+
+  // --- Relative timestamps ---
+  function relativeTime(iso) {
+    const d = new Date(iso);
+    const now = Date.now();
+    const diff = now - d.getTime();
+    if (diff < 0) return 'in ' + humanDuration(-diff);
+    return humanDuration(diff) + ' ago';
+  }
+
+  function humanDuration(ms) {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    const d = Math.floor(h / 24);
+    if (d < 30) return d + 'd';
+    const mo = Math.floor(d / 30);
+    return mo + 'mo';
+  }
+
+  document.querySelectorAll('time').forEach(el => {
+    const iso = el.getAttribute('datetime');
+    if (iso) {
+      el.title = iso;
+      el.textContent = relativeTime(iso);
+    }
+  });
+
+  // --- File upload ---
+  const fileInput = document.getElementById('f-file');
+  const fileDrop = document.getElementById('file-drop');
+  const fileDropText = document.getElementById('file-drop-text');
+  const titleInput = document.getElementById('f-title');
+  const contentArea = document.getElementById('f-content');
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      contentArea.value = e.target.result;
+      if (!titleInput.value.trim()) {
+        titleInput.value = file.name;
+      }
+      fileDropText.textContent = file.name;
+    };
+    reader.readAsText(file);
+  }
+
+  fileInput.addEventListener('change', function() {
+    if (this.files.length) loadFile(this.files[0]);
+  });
+
+  fileDrop.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    this.classList.add('drag-over');
+  });
+
+  fileDrop.addEventListener('dragleave', function() {
+    this.classList.remove('drag-over');
+  });
+
+  fileDrop.addEventListener('drop', function(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+  });
+
+  // also support dropping on the textarea
+  contentArea.addEventListener('dragover', function(e) { e.preventDefault(); });
+  contentArea.addEventListener('drop', function(e) {
+    if (e.dataTransfer.files.length) {
+      e.preventDefault();
+      loadFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  // --- Helpers ---
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  function escapeAttr(s) {
+    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+})();
+</script>
+{% endraw %}
+</body>
+</html>

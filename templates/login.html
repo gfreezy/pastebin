@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - Pastebin</title>
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      color: #1a1a1a;
+      background: #fafafa;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .login-card {
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 1.5rem;
+      text-align: center;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 1rem;
+    }
+
+    .field label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #666;
+      margin-bottom: 0.3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field input {
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #fff;
+      color: #1a1a1a;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    .field input:focus { border-color: #999; }
+
+    .totp-field input {
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 1.1rem;
+      letter-spacing: 0.3em;
+      text-align: center;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.55rem 1.5rem;
+      border: 1px solid #1a1a1a;
+      border-radius: 5px;
+      background: #1a1a1a;
+      color: #fff;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      width: 100%;
+    }
+
+    .btn:hover { opacity: 0.8; }
+
+    .error {
+      background: #fff0f0;
+      border: 1px solid #fdd;
+      border-radius: 5px;
+      color: #c0392b;
+      font-size: 0.8rem;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h1>Pastebin</h1>
+
+    {% match error %}
+      {% when Some with (msg) %}
+        <div class="error">{{ msg }}</div>
+      {% when None %}
+    {% endmatch %}
+
+    <form method="post" action="/login">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" required autofocus />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required />
+      </div>
+      {% if totp_enabled %}
+      <div class="field totp-field">
+        <label for="totp_code">Authenticator Code</label>
+        <input id="totp_code" name="totp_code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" autocomplete="one-time-code" />
+      </div>
+      {% endif %}
+      <button class="btn" type="submit">Login</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ paste.title.as_deref().unwrap_or("Untitled") }} - Pastebin</title>
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      color: #1a1a1a;
+      background: #fafafa;
+      margin: 0;
+      padding: 3rem 1.5rem;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    a { color: #1a1a1a; }
+
+    .back {
+      font-size: 0.8rem;
+      color: #888;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .back:hover { color: #1a1a1a; }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .header-left { flex: 1; min-width: 0; }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.5rem;
+      word-break: break-word;
+    }
+
+    h1.muted { color: #bbb; font-style: italic; font-weight: 400; }
+
+    /* Edit mode title input */
+    .title-input {
+      font-family: inherit;
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 0.3rem 0.5rem;
+      width: 100%;
+      outline: none;
+      background: #fff;
+      color: #1a1a1a;
+    }
+
+    .title-input:focus { border-color: #999; }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.5rem;
+      font-size: 0.78rem;
+      color: #888;
+    }
+
+    .meta-item { display: flex; align-items: center; gap: 0.3rem; }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-public { background: #e8f5e9; color: #388e3c; }
+    .badge-private { background: #fff3e0; color: #e65100; }
+
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.4rem 1rem;
+      border: 1px solid #1a1a1a;
+      border-radius: 5px;
+      background: #1a1a1a;
+      color: #fff;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover { opacity: 0.8; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-outline {
+      background: #fff;
+      color: #1a1a1a;
+      border-color: #ddd;
+    }
+
+    .btn-outline:hover { border-color: #999; opacity: 1; }
+
+    .btn-icon {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.25rem;
+      color: #aaa;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      transition: color 0.15s;
+    }
+
+    .btn-icon:hover { color: #1a1a1a; }
+
+    .copy-ok { color: #388e3c !important; }
+
+    .hidden { display: none !important; }
+
+    /* Content card */
+    .card {
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fafafa;
+    }
+
+    .card-header-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #999;
+    }
+
+    .content-view {
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+    }
+
+    .content-view pre {
+      margin: 0;
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .content-edit textarea {
+      width: 100%;
+      min-height: 300px;
+      border: none;
+      padding: 1rem 1.25rem;
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      color: #1a1a1a;
+      background: #fff;
+    }
+
+    .url-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 1.5rem;
+      padding: 0.6rem 1rem;
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      font-size: 0.8rem;
+    }
+
+    .url-row-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #999;
+      margin-right: 0.5rem;
+    }
+
+    .mono { font-family: "SF Mono", "Fira Code", "Consolas", monospace; }
+    .text-sm { font-size: 0.78rem; }
+    .muted-text { color: #bbb; }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .nav-left a.back {
+      margin: 0;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 1.25rem;
+      align-items: center;
+    }
+
+    .nav-links a {
+      font-size: 0.78rem;
+      color: #888;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover { color: #1a1a1a; }
+
+    @media (max-width: 640px) {
+      body { padding: 1.5rem 1rem; }
+      .header { flex-direction: column; }
+      .actions { align-self: flex-start; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="nav">
+    <a href="/" class="back">&larr; Back to list</a>
+    <div class="nav-links">
+      <a href="/totp-setup">TOTP</a>
+      <a href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="header">
+    <div class="header-left">
+      <!-- Read mode title -->
+      <div id="title-read">
+        {% match paste.title %}
+          {% when Some with (t) %}
+            <h1>{{ t }}</h1>
+          {% when None %}
+            <h1 class="muted">Untitled</h1>
+        {% endmatch %}
+      </div>
+      <!-- Edit mode title -->
+      <div id="title-edit" class="hidden">
+        <input class="title-input" id="edit-title" type="text"
+               value="{{ paste.title.as_deref().unwrap_or("") }}"
+               placeholder="Title (optional)" />
+      </div>
+
+      <div class="meta">
+        <span class="meta-item">
+          <span class="mono text-sm">{{ paste.id }}</span>
+        </span>
+        <span class="meta-item">
+          <span class="badge badge-{{ paste.visibility }}">{{ paste.visibility }}</span>
+        </span>
+        <span class="meta-item">
+          <time datetime="{{ paste.created_at }}">{{ paste.created_at }}</time>
+        </span>
+        {% match paste.expires_at %}
+          {% when Some with (exp) %}
+            <span class="meta-item">
+              expires <time datetime="{{ exp }}">{{ exp }}</time>
+            </span>
+          {% when None %}
+        {% endmatch %}
+      </div>
+    </div>
+
+    <div class="actions">
+      <!-- Read mode buttons -->
+      <div id="actions-read">
+        <button class="btn btn-outline" id="edit-btn">Edit</button>
+      </div>
+      <!-- Edit mode buttons -->
+      <div id="actions-edit" class="hidden">
+        <button class="btn" id="save-btn">Save</button>
+        <button class="btn btn-outline" id="cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-header-label">Content</span>
+      <button class="btn-icon copy-content-btn" title="Copy content">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      </button>
+    </div>
+    <!-- Read mode -->
+    <div class="content-view" id="content-read">
+      <pre>{{ paste.content }}</pre>
+    </div>
+    <!-- Edit mode -->
+    <div class="content-edit hidden" id="content-edit">
+      <textarea id="edit-content">{{ paste.content }}</textarea>
+    </div>
+  </div>
+
+  <div class="url-row">
+    <span class="url-row-label">Raw</span>
+    <a href="{{ paste.raw_url }}" class="mono text-sm" target="_blank">{{ paste.raw_url }}</a>
+    <button class="btn-icon copy-url-btn" data-url="{{ paste.raw_url }}" title="Copy URL">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+    </button>
+  </div>
+</div>
+
+{% raw %}
+<script>
+(function() {
+  const pasteId = document.querySelector('.mono.text-sm').textContent.trim();
+
+  // Elements
+  const titleRead = document.getElementById('title-read');
+  const titleEdit = document.getElementById('title-edit');
+  const titleInput = document.getElementById('edit-title');
+  const contentRead = document.getElementById('content-read');
+  const contentEdit = document.getElementById('content-edit');
+  const contentTextarea = document.getElementById('edit-content');
+  const actionsRead = document.getElementById('actions-read');
+  const actionsEdit = document.getElementById('actions-edit');
+  const editBtn = document.getElementById('edit-btn');
+  const saveBtn = document.getElementById('save-btn');
+  const cancelBtn = document.getElementById('cancel-btn');
+
+  // State
+  let originalTitle = titleInput.value;
+  let originalContent = contentTextarea.value;
+
+  function enterEditMode() {
+    originalTitle = titleInput.value;
+    originalContent = contentTextarea.value;
+    titleRead.classList.add('hidden');
+    titleEdit.classList.remove('hidden');
+    contentRead.classList.add('hidden');
+    contentEdit.classList.remove('hidden');
+    actionsRead.classList.add('hidden');
+    actionsEdit.classList.remove('hidden');
+    contentTextarea.focus();
+  }
+
+  function exitEditMode() {
+    titleRead.classList.remove('hidden');
+    titleEdit.classList.add('hidden');
+    contentRead.classList.remove('hidden');
+    contentEdit.classList.add('hidden');
+    actionsRead.classList.remove('hidden');
+    actionsEdit.classList.add('hidden');
+  }
+
+  editBtn.addEventListener('click', enterEditMode);
+
+  cancelBtn.addEventListener('click', function() {
+    titleInput.value = originalTitle;
+    contentTextarea.value = originalContent;
+    exitEditMode();
+  });
+
+  saveBtn.addEventListener('click', async function() {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    const body = {};
+    if (titleInput.value !== originalTitle) {
+      body.title = titleInput.value;
+    }
+    if (contentTextarea.value !== originalContent) {
+      body.content = contentTextarea.value;
+    }
+
+    if (Object.keys(body).length === 0) {
+      exitEditMode();
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/pastes/' + encodeURIComponent(pasteId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        alert('Error: ' + text);
+        return;
+      }
+      // Update the read-mode view
+      const h1 = titleRead.querySelector('h1');
+      if (titleInput.value.trim()) {
+        h1.textContent = titleInput.value;
+        h1.className = '';
+      } else {
+        h1.textContent = 'Untitled';
+        h1.className = 'muted';
+      }
+      contentRead.querySelector('pre').textContent = contentTextarea.value;
+      exitEditMode();
+    } catch(err) {
+      alert('Network error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+  });
+
+  // Copy content
+  document.querySelector('.copy-content-btn').addEventListener('click', function() {
+    const text = contentTextarea.value;
+    navigator.clipboard.writeText(text).then(() => {
+      this.classList.add('copy-ok');
+      setTimeout(() => this.classList.remove('copy-ok'), 1500);
+    });
+  });
+
+  // Copy URL
+  const copyUrlBtn = document.querySelector('.copy-url-btn');
+  if (copyUrlBtn) {
+    copyUrlBtn.addEventListener('click', function() {
+      navigator.clipboard.writeText(this.dataset.url).then(() => {
+        this.classList.add('copy-ok');
+        setTimeout(() => this.classList.remove('copy-ok'), 1500);
+      });
+    });
+  }
+
+  // Relative timestamps
+  document.querySelectorAll('time').forEach(el => {
+    const iso = el.getAttribute('datetime');
+    if (iso) {
+      el.title = iso;
+      el.textContent = relativeTime(iso);
+    }
+  });
+
+  function relativeTime(iso) {
+    const d = new Date(iso);
+    const now = Date.now();
+    const diff = now - d.getTime();
+    if (diff < 0) return 'in ' + humanDuration(-diff);
+    return humanDuration(diff) + ' ago';
+  }
+
+  function humanDuration(ms) {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    const d = Math.floor(h / 24);
+    if (d < 30) return d + 'd';
+    const mo = Math.floor(d / 30);
+    return mo + 'mo';
+  }
+})();
+</script>
+{% endraw %}
+</body>
+</html>
