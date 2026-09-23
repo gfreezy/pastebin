@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
  document.getElementById('example-script')?.addEventListener('click', () => {
   if(code.readOnly) return;
   if(code.value.trim() && !confirm('Replace the current content with the example?')) return;
-  code.value = 'const items = ["Hello", "from JavaScript"];\nconsole.log("Generated", items.length, "items");\nreturn items.join("\\n");';
+  code.value = 'export default async function () {\n  const items = ["Hello", "from JavaScript"];\n  console.log("Generated", items.length, "items");\n  return items.join("\\n");\n}';
   code.dispatchEvent(new Event('input',{bubbles:true})); code.focus();
  });
  document.getElementById('paste-form')?.addEventListener('reset', () => { setTimeout(() => {

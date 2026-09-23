@@ -11,6 +11,7 @@ dotenvy = "0.15"
 deno_runtime = { version = "=0.248.0", features = ["transpile"] }
 deno_resolver = "=0.71.0"
 deno_core = "=0.393.0"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 hyper-util = { version = "0.1", features = ["client-legacy"] }
 ipnet = "2"
 # temporal_rs in this V8 release uses ICU 2.1 unstable APIs.

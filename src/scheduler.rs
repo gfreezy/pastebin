@@ -210,7 +210,7 @@ mod tests {
             "legacy"
         );
         let form: CreatePasteForm = serde_json::from_value(serde_json::json!({
-            "id":"scheduled", "content":"return 'cached';", "kind":"javascript", "scheduler":"*/5 * * * *",
+            "id":"scheduled", "content":"export default () => 'cached';", "kind":"javascript", "scheduler":"*/5 * * * *",
             "visibility":"private", "access_password":"secret"
         })).unwrap();
         handlers::create_paste(State(state.clone()), Form(form))
@@ -256,7 +256,7 @@ mod tests {
             .unwrap();
         let stale = claim(&state).await.unwrap().unwrap();
         let update =
-            serde_json::from_value(serde_json::json!({"content":"return 'new';"})).unwrap();
+            serde_json::from_value(serde_json::json!({"content":"export default () => 'new';"})).unwrap();
         handlers::update_paste(Path("scheduled".into()), State(state.clone()), Json(update))
             .await
             .unwrap();
@@ -272,7 +272,7 @@ mod tests {
         );
         // Empty scheduler switches to run-on-request and invalidates the cache.
         let update =
-            serde_json::from_value(serde_json::json!({"scheduler":"", "content":"return 'live';"}))
+            serde_json::from_value(serde_json::json!({"scheduler":"", "content":"export default () => 'live';"}))
                 .unwrap();
         handlers::update_paste(Path("scheduled".into()), State(state.clone()), Json(update))
             .await
@@ -300,7 +300,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             response_text(raw("scheduled", Some("secret")).await.unwrap()).await,
-            "return 'live';"
+            "export default () => 'live';"
         );
         let view = handlers::view_paste(Path("scheduled".into()), State(state.clone()))
             .await

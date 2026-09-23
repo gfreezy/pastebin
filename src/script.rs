@@ -1,8 +1,6 @@
 //! Embedded Deno executor. Only administrators author scripts; public raw URLs
 //! may execute them. Each invocation has its own isolate and bounded lifetime.
-use deno_runtime::deno_core::{
-    self, JsRuntime, ModuleSpecifier, NoopModuleLoader, OpState, op2, v8,
-};
+use deno_runtime::deno_core::{self, JsRuntime, ModuleSpecifier, OpState, op2, v8};
 use deno_runtime::deno_permissions::{
     Host, NetDescriptor, PermissionDescriptorParser, Permissions, PermissionsContainer,
     PermissionsOptions, RuntimePermissionDescriptorParser,
@@ -16,6 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Semaphore;
+mod modules;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 pub const MAX_SOURCE: usize = 256 * 1024;
@@ -52,6 +51,7 @@ pub struct ScriptExecutor {
     permissions: PermissionsContainer,
     timeout: Duration,
     public_only: bool,
+    module_cache: modules::ModuleCache,
 }
 
 #[derive(Debug, Serialize)]
@@ -138,6 +138,7 @@ impl ScriptExecutor {
             permissions: PermissionsContainer::new(parser, permissions),
             timeout,
             public_only,
+            module_cache: Default::default(),
         })
     }
 
@@ -199,6 +200,14 @@ impl ScriptExecutor {
     }
 
     async fn run(&self, source: String) -> ScriptResult {
+        let loader = match modules::HttpsModuleLoader::new(
+            self.permissions.deep_clone(),
+            self.public_only,
+            self.module_cache.clone(),
+        ) {
+            Ok(loader) => loader,
+            Err(error) => return ScriptResult::error(error.to_string()),
+        };
         let services = WorkerServiceOptions::<
             deno_resolver::npm::DenoInNpmPackageChecker,
             deno_resolver::npm::NpmResolver<sys_traits::impls::RealSys>,
@@ -209,7 +218,7 @@ impl ScriptExecutor {
             deno_rt_native_addon_loader: None,
             feature_checker: Default::default(),
             fs: Arc::new(deno_runtime::deno_fs::RealFs),
-            module_loader: Rc::new(NoopModuleLoader),
+            module_loader: Rc::new(loader),
             node_services: None,
             npm_process_state_provider: None,
             permissions: self.permissions.deep_clone(),
@@ -258,15 +267,29 @@ impl ScriptExecutor {
                 .js_runtime
                 .execute_script("paste-bootstrap.js", include_str!("script_bootstrap.js"))
                 .map_err(|e| e.to_string())?;
-            let program = format!("(async () => {{\n{source}\n}})()\n//# sourceURL=paste.js");
-            let value = worker
+            let module = worker
                 .js_runtime
-                .execute_script("paste.js", program)
+                .load_main_es_module_from_code(&ModuleSpecifier::parse("file:///paste.js").unwrap(), source)
+                .await
                 .map_err(|e| e.to_string())?;
-            #[allow(deprecated)]
+            let evaluation = worker.js_runtime.mod_evaluate(module);
+            worker.js_runtime.with_event_loop_promise(evaluation, Default::default())
+                .await.map_err(|e| e.to_string())?;
+            let namespace = worker.js_runtime.get_module_namespace(module).map_err(|e| e.to_string())?;
+            let function = {
+                deno_core::scope!(scope, worker.js_runtime);
+                let namespace = v8::Local::new(scope, namespace);
+                let key = v8::String::new(scope, "default").unwrap();
+                let value = namespace.get(scope, key.into())
+                    .ok_or("Could not read the default export")?;
+                let function = v8::Local::<v8::Function>::try_from(value)
+                    .map_err(|_| "Export a default function: export default async function () { return \"content\"; }")?;
+                v8::Global::new(scope, function)
+            };
+            let call = worker.js_runtime.call(&function);
             let value = worker
                 .js_runtime
-                .resolve_value(value)
+                .with_event_loop_promise(call, Default::default())
                 .await
                 .map_err(|e| e.to_string())?;
             deno_core::scope!(scope, worker.js_runtime);
@@ -369,18 +392,192 @@ impl deno_runtime::deno_fetch::dns::Resolve for PublicResolver {
 mod tests {
     use super::*;
 
+    impl ScriptExecutor {
+        async fn execute_body(&self, body: String) -> ScriptResult {
+            self.execute(format!("export default async function () {{\n{body}\n}}"))
+                .await
+        }
+    }
+
+    // Optional smoke test against a real, separately downloaded ESM build.
+    // PASTEBIN_TEST_YAML_MODULE=/path/to/js-yaml.mjs cargo test yaml_module_smoke -- --ignored
+    #[tokio::test]
+    #[ignore = "requires the js-yaml@4.1.1 ESM fixture path in PASTEBIN_TEST_YAML_MODULE"]
+    async fn yaml_module_smoke() {
+        let path = std::env::var("PASTEBIN_TEST_YAML_MODULE").expect("set the YAML fixture path");
+        let yaml = std::fs::read_to_string(path).unwrap();
+        let app = axum::Router::new().route(
+            "/yaml.mjs",
+            axum::routing::get(move || {
+                let yaml = yaml.clone();
+                async move {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "text/javascript")],
+                        yaml,
+                    )
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let executor = ScriptExecutor::new(vec![], false, Duration::from_secs(3)).unwrap();
+        let source = format!(
+            "import {{load, dump}} from 'http://{address}/yaml.mjs'; export default function () {{ const config = load('name: demo\\ninterval: 5\\n'); config.interval = 10; return dump(config); }}"
+        );
+        let result = executor.execute(source.clone()).await;
+        assert_eq!(result.error, None, "{result:?}");
+        assert_eq!(result.output.as_deref(), Some("name: demo\ninterval: 10\n"));
+        server.abort();
+        let cached = executor.execute(source).await;
+        assert_eq!(cached.error, None, "{cached:?}");
+        assert_eq!(cached.output, result.output);
+    }
+
+    #[tokio::test]
+    async fn esm_entrypoint_and_remote_modules() {
+        use axum::{
+            Router,
+            http::{StatusCode, header},
+            response::Redirect,
+            routing::get,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let executor = ScriptExecutor::new(vec![], false, Duration::from_secs(3)).unwrap();
+        for source in [
+            "export default function () { return 'ok'; }",
+            "export default async () => { await new Promise(r => setTimeout(r, 5)); return 'ok'; };",
+            "await Promise.resolve(); function run() { return 'ok'; } export { run as default };",
+        ] {
+            let result = executor.execute(source.into()).await;
+            assert_eq!(result.error, None, "{result:?}");
+            assert_eq!(result.output.as_deref(), Some("ok"));
+        }
+        for source in ["export const value = 1;", "export default 'text';"] {
+            let result = executor.execute(source.into()).await;
+            assert!(result.error.unwrap().contains("default function"));
+        }
+        assert!(
+            executor
+                .execute("return 'legacy';".into())
+                .await
+                .error
+                .is_some()
+        );
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let requests = hits.clone();
+        let failures = Arc::new(AtomicUsize::new(0));
+        let attempts = failures.clone();
+        let app = Router::new()
+            .route("/entry.js", get(|| async { Redirect::temporary("/pkg/main.js") }))
+            .route("/pkg/main.js", get(move || {
+                requests.fetch_add(1, Ordering::SeqCst);
+                async { ([(header::CONTENT_TYPE, "text/javascript")],
+                    "import { value } from './nested.js'; globalThis.moduleRuns = (globalThis.moduleRuns || 0) + 1; export const read = () => value + ':' + globalThis.moduleRuns + ':' + typeof Deno;") }
+            }))
+            .route("/pkg/nested.js", get(|| async { ([(header::CONTENT_TYPE, "application/javascript")], "export const value = 'loaded';") }))
+            .route("/html", get(|| async { ([(header::CONTENT_TYPE, "text/html")], "<html>not JavaScript</html>") }))
+            .route("/large.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript")], "x".repeat(2 * 1024 * 1024 + 1)) }))
+            .route("/retry.js", get(move || {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                async move { (if attempt == 0 { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::OK },
+                    [(header::CONTENT_TYPE, "text/javascript")], "export const value = 'retried';") }
+            }))
+            .route("/loop.js", get(|| async { Redirect::temporary("/loop.js") }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let source = format!(
+            "import {{read}} from 'http://{address}/entry.js'; export default async function () {{ const again = await import('http://{address}/entry.js'); return read() + ':' + (read === again.read); }}"
+        );
+        for _ in 0..2 {
+            let result = executor.execute(source.clone()).await;
+            assert_eq!(result.error, None, "{result:?}");
+            assert_eq!(result.output.as_deref(), Some("loaded:1:undefined:true"));
+        }
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "Reuse downloaded source across executions"
+        );
+        for (path, message) in [
+            ("html", "Content-Type"),
+            ("large.js", "2 MiB"),
+            ("loop.js", "5 redirects"),
+            ("missing.js", "404"),
+        ] {
+            let result = executor
+                .execute(format!(
+                    "import 'http://{address}/{path}'; export default () => 'bad';"
+                ))
+                .await;
+            assert!(result.error.unwrap().contains(message), "{path}");
+        }
+        let retry = format!(
+            "import {{value}} from 'http://{address}/retry.js'; export default () => value;"
+        );
+        assert!(
+            executor
+                .execute(retry.clone())
+                .await
+                .error
+                .unwrap()
+                .contains("503")
+        );
+        assert_eq!(
+            executor.execute(retry).await.output.as_deref(),
+            Some("retried")
+        );
+        let restricted = ScriptExecutor::new(
+            vec!["allowed.example".into()],
+            false,
+            Duration::from_secs(3),
+        )
+        .unwrap();
+        assert!(restricted.execute(source.clone()).await.error.is_some());
+        server.abort();
+        assert_eq!(
+            executor.execute(source).await.output.as_deref(),
+            Some("loaded:1:undefined:true")
+        );
+
+        let public = ScriptExecutor::new(vec![], true, Duration::from_secs(3)).unwrap();
+        for url in [
+            "http://example.com/x.js",
+            "https://127.0.0.1/x.js",
+            "https://[::1]/x.js",
+            "https://localhost/x.js",
+            "file:///etc/passwd",
+            "data:text/javascript,export default 1",
+            "npm:yaml",
+            "jsr:@std/yaml",
+            "yaml",
+            "https://user:pass@example.com/x.js",
+        ] {
+            let result = public
+                .execute(format!("import '{url}'; export default () => 'bad';"))
+                .await;
+            assert!(result.error.is_some(), "must reject {url}");
+        }
+    }
+
     #[tokio::test]
     async fn execution_network_and_limits() {
         let executor = ScriptExecutor::new(vec![], false, Duration::from_secs(2)).unwrap();
         let result = executor
-            .execute("console.log('hello', {n: 1}); return `value:${[1, 2].at(-1)}`;".into())
+            .execute_body("console.log('hello', {n: 1}); return `value:${[1, 2].at(-1)}`;".into())
             .await;
         assert_eq!(result.error, None, "{result:?}");
         assert_eq!(result.output.as_deref(), Some("value:2"));
         assert_eq!(result.logs, vec!["[log] hello {\"n\":1}"]);
         assert_eq!(
             executor
-                .execute("return '';".into())
+                .execute_body("return '';".into())
                 .await
                 .output
                 .as_deref(),
@@ -388,20 +585,26 @@ mod tests {
         );
         assert!(
             executor
-                .execute("return 42;".into())
+                .execute_body("return 42;".into())
                 .await
                 .error
                 .unwrap()
                 .contains("string")
         );
-        assert!(executor.execute("return (;".into()).await.error.is_some());
+        assert!(
+            executor
+                .execute_body("return (;".into())
+                .await
+                .error
+                .is_some()
+        );
         let result = executor
-            .execute("console.warn('before'); throw new Error('boom');".into())
+            .execute_body("console.warn('before'); throw new Error('boom');".into())
             .await;
         assert!(result.error.unwrap().contains("boom"));
         assert_eq!(result.logs.len(), 1);
         let result = executor
-            .execute("return [typeof Deno, typeof Worker, typeof navigator].join(',');".into())
+            .execute_body("return [typeof Deno, typeof Worker, typeof navigator].join(',');".into())
             .await;
         assert_eq!(
             result.output.as_deref(),
@@ -409,25 +612,25 @@ mod tests {
         );
         assert!(
             executor
-                .execute("await import('file:///etc/passwd'); return 'bad';".into())
+                .execute_body("await import('file:///etc/passwd'); return 'bad';".into())
                 .await
                 .error
                 .is_some()
         );
         assert!(
             executor
-                .execute("return 'x'.repeat(1024 * 1024 + 1);".into())
+                .execute_body("return 'x'.repeat(1024 * 1024 + 1);".into())
                 .await
                 .error
                 .unwrap()
                 .contains("1 MiB")
         );
         executor
-            .execute("globalThis.leak = 'secret'; return 'ok';".into())
+            .execute_body("globalThis.leak = 'secret'; return 'ok';".into())
             .await;
         assert_eq!(
             executor
-                .execute("return typeof leak;".into())
+                .execute_body("return typeof leak;".into())
                 .await
                 .output
                 .as_deref(),
@@ -447,14 +650,18 @@ mod tests {
             "const r = await fetch('http://{address}/', {{method: 'POST', body: 'hello'}}); return (await r.json()).value;"
         );
         assert_eq!(
-            executor.execute(source.clone()).await.output.as_deref(),
+            executor
+                .execute_body(source.clone())
+                .await
+                .output
+                .as_deref(),
             Some("network")
         );
         let public = ScriptExecutor::new(vec![], true, Duration::from_secs(2)).unwrap();
-        assert!(public.execute(source).await.error.is_some());
+        assert!(public.execute_body(source).await.error.is_some());
         assert!(
             public
-                .execute(format!(
+                .execute_body(format!(
                     "await fetch('http://localhost:{}/'); return 'bad';",
                     address.port()
                 ))
@@ -467,21 +674,21 @@ mod tests {
         let bounded = ScriptExecutor::new(vec![], false, Duration::from_millis(200)).unwrap();
         assert!(
             bounded
-                .execute("while (true) {}".into())
+                .execute_body("while (true) {}".into())
                 .await
                 .error
                 .is_some()
         );
         assert!(
             bounded
-                .execute("await new Promise(r => setTimeout(r, 10000)); return 'late';".into())
+                .execute_body("await new Promise(r => setTimeout(r, 10000)); return 'late';".into())
                 .await
                 .error
                 .is_some()
         );
         assert_eq!(
             bounded
-                .execute("return 'recovered';".into())
+                .execute_body("return 'recovered';".into())
                 .await
                 .output
                 .as_deref(),

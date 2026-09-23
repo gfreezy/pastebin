@@ -126,21 +126,62 @@ unsaved code. The result, console logs, errors, and elapsed time appear on the
 page. Preview makes real HTTP requests, including POST requests. Saving code does
 not require a successful preview.
 
-Scripts are async function bodies. Use `return` to produce a **string** (including
-an empty string), and `console.log/info/warn/error/debug` for separate preview
-logs. Use `JSON.stringify` for JSON output. JavaScript is supported directly;
-TypeScript, npm dependencies, module imports, browser DOM, and the `Deno`/Node
-system namespaces are not exposed.
+Scripts are JavaScript ES modules with a **default-exported function**. The server
+loads the module and calls that function once, awaiting its result. Synchronous
+and async functions are supported. Return a **string** (including an empty
+string); use `JSON.stringify` for JSON output. `console.log/info/warn/error/debug`
+appear separately in preview logs. Top-level `return` scripts are no longer
+supported: move their code into `export default async function () { ... }`.
 
 ```js
-const response = await fetch("https://api.example.com/items", {
-  headers: { Accept: "application/json" }
-});
-if (!response.ok) throw new Error(`Upstream HTTP ${response.status}`);
-const data = await response.json();
-console.log("Items:", data.items.length);
-return data.items.map(item => item.url).join("\n");
+export default async function () {
+  const response = await fetch("https://api.example.com/items", {
+    headers: { Accept: "application/json" }
+  });
+  if (!response.ok) throw new Error(`Upstream HTTP ${response.status}`);
+  const data = await response.json();
+  console.log("Items:", data.items.length);
+  return data.items.map(item => item.url).join("\n");
+}
 ```
+
+### HTTPS ESM dependencies
+
+Use a full HTTPS URL to a JavaScript ESM build. Static `import` declarations,
+`export ... from`, and dynamic `await import(url)` are supported. Dependencies
+can import relative URLs; after a redirect they resolve against the final URL.
+For example, parsing and generating YAML with a version-pinned dependency:
+
+```js
+import { load, dump } from "https://cdn.jsdelivr.net/npm/js-yaml@4.1.1/dist/js-yaml.mjs";
+
+export default function () {
+  const config = load("name: demo\ninterval: 5\n");
+  config.interval = 10;
+  return dump(config);
+}
+```
+
+Modules download automatically on first use. Downloaded source is cached in
+memory across preview, Raw, and scheduled executions for up to one hour (128
+entries / 32 MiB, oldest entries evicted first). Restarting clears this dependency
+cache; it is separate from the scheduled **result** cache in SQLite. Each run
+still evaluates modules in a fresh isolate, so module globals never persist.
+Pin versions in URLs for predictable dependencies. Failed downloads are not cached.
+
+Imports follow `PASTEBIN_JS_ALLOW_NET` and the public-network restrictions,
+including every redirect and DNS lookup. Add dependency CDN hosts and any
+redirect/dependency hosts to your allowlist. Downloads connect directly, without
+using proxy environment variables. Limits: 64 modules and 8 MiB combined source
+per execution, 2 MiB per module, 5 redirects, and 10 seconds per download including
+redirects and body. Loading counts toward the overall 30-second execution limit.
+Servers must return a JavaScript Content-Type and UTF-8 source.
+
+This is an HTTPS ESM loader, not Deno CLI package resolution. Bare package names,
+`npm:`, `jsr:`, local files, HTTP imports, TypeScript, JSX, CommonJS, JSON/Wasm
+imports, browser DOM, and `Deno`/Node system namespaces are not supported. Use
+JavaScript ESM builds that work with the available web APIs (`fetch`, timers,
+Web Crypto, etc.).
 
 ### Execution modes
 
@@ -192,7 +233,7 @@ Create a JavaScript paste that runs on each Raw request:
 ```sh
 curl -H 'X-User: admin' -H 'X-Pass: secret' \
   --data-urlencode 'kind=javascript' \
-  --data-urlencode 'content=return new Date().toISOString();' \
+  --data-urlencode 'content=export default () => new Date().toISOString();' \
   http://127.0.0.1:8080/api/pastes
 ```
 
@@ -202,7 +243,7 @@ Create a scheduled JavaScript paste:
 curl -H 'X-User: admin' -H 'X-Pass: secret' \
   --data-urlencode 'kind=javascript' \
   --data-urlencode 'scheduler=*/5 * * * *' \
-  --data-urlencode 'content=return new Date().toISOString();' \
+  --data-urlencode 'content=export default () => new Date().toISOString();' \
   http://127.0.0.1:8080/api/pastes
 ```
 
@@ -210,7 +251,7 @@ Preview without saving:
 
 ```sh
 curl -H 'X-User: admin' -H 'X-Pass: secret' -H 'Content-Type: application/json' \
-  -d '{"content":"console.log(\"hello\"); return \"result\";"}' \
+  -d '{"content":"export default () => { console.log(\"hello\"); return \"result\"; };"}' \
   http://127.0.0.1:8080/api/script-preview
 ```
 
