@@ -57,7 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let admin_routes = Router::new()
         .route("/", get(handlers::admin_index))
+        .route("/new", get(handlers::new_paste))
         .route("/pastes/:id", get(handlers::view_paste))
+        .route("/pastes/:id/edit", get(handlers::edit_paste))
         .route(
             "/totp-setup",
             get(auth::totp_setup_page).post(auth::totp_setup_submit),

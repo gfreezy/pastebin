@@ -23,6 +23,31 @@ struct IndexTemplate {
 struct ViewTemplate {
     paste: PasteDetail,
     script_timezone: String,
+    editing: bool,
+}
+
+#[derive(Template)]
+#[template(path = "new.html")]
+struct NewTemplate {
+    script_timezone: String,
+}
+
+pub async fn new_paste(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    NewTemplate {
+        script_timezone: state.script_timezone.to_string(),
+    }
+}
+
+pub async fn edit_paste(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let axum::Json(paste) = get_paste(Path(id), State(state.clone())).await?;
+    Ok(ViewTemplate {
+        paste,
+        script_timezone: state.script_timezone.to_string(),
+        editing: true,
+    })
 }
 
 pub async fn admin_index(
@@ -314,6 +339,7 @@ pub async fn view_paste(
     Ok(ViewTemplate {
         paste,
         script_timezone: state.script_timezone.to_string(),
+        editing: false,
     })
 }
 
@@ -326,7 +352,7 @@ pub async fn update_paste(
     // Check paste exists and is not expired
     let mut transaction = state.db.begin_with("BEGIN IMMEDIATE").await?;
     let row = sqlx::query(
-        "SELECT id, kind, scheduler, content FROM pastes WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)",
+        "SELECT id, kind, scheduler, content, visibility, access_key, expires_at FROM pastes WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)",
     )
     .bind(&id)
     .bind(now)
@@ -335,6 +361,28 @@ pub async fn update_paste(
 
     let Some(row) = row else {
         return Err(AppError::NotFound);
+    };
+
+    let visibility = parse_visibility_string(
+        form.visibility
+            .clone()
+            .unwrap_or_else(|| row.get("visibility")),
+    )?;
+    let access_key = if visibility == Visibility::Private {
+        Some(match form.access_password.as_ref() {
+            Some(key) if !key.trim().is_empty() => key.clone(),
+            Some(_) => nanoid::nanoid!(16),
+            None => row
+                .get::<Option<String>, _>("access_key")
+                .unwrap_or_else(|| nanoid::nanoid!(16)),
+        })
+    } else {
+        None
+    };
+    let expires_at = if form.expires_at.is_some() || form.expires_in.is_some() {
+        parse_expiry(form.expires_at.as_deref(), form.expires_in)?
+    } else {
+        row.get::<Option<i64>, _>("expires_at")
     };
 
     if let Some(ref content) = form.content {
@@ -373,7 +421,7 @@ pub async fn update_paste(
             .content
             .as_ref()
             .is_some_and(|content| content != &row.get::<String, _>("content"));
-    sqlx::query("UPDATE pastes SET title = COALESCE(?, title), content = COALESCE(?, content), kind = ?, scheduler = ?,
+    sqlx::query("UPDATE pastes SET visibility = ?, access_key = ?, expires_at = ?, title = COALESCE(?, title), content = COALESCE(?, content), kind = ?, scheduler = ?,
         revision = revision + ?, cached_content = CASE WHEN ? THEN NULL ELSE cached_content END,
         cache_updated_at = CASE WHEN ? THEN NULL ELSE cache_updated_at END,
         last_run_at = CASE WHEN ? THEN NULL ELSE last_run_at END,
@@ -381,6 +429,7 @@ pub async fn update_paste(
         next_run_at = CASE WHEN ? THEN ? ELSE next_run_at END,
         running_until = CASE WHEN ? THEN NULL ELSE running_until END,
         run_token = CASE WHEN ? THEN NULL ELSE run_token END WHERE id = ?")
+        .bind(visibility.as_str()).bind(access_key).bind(expires_at)
         .bind(form.title.as_deref()).bind(form.content.as_deref()).bind(kind).bind(scheduler.as_deref())
         .bind(i64::from(changed)).bind(changed).bind(changed).bind(changed).bind(changed)
         .bind(changed).bind(scheduler.as_ref().map(|_| now))
@@ -403,4 +452,126 @@ pub async fn preview_script(
         [(header::CACHE_CONTROL, "no-store")],
         axum::Json(state.scripts.execute(form.content).await),
     )
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn access_key_expiry_and_cache_updates() {
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::db::init_db(&db).await.unwrap();
+        let state = Arc::new(AppState {
+            db,
+            scripts: crate::script::ScriptExecutor::from_env().unwrap(),
+            script_timezone: chrono_tz::Asia::Shanghai,
+            admin_user: "test".into(),
+            admin_pass: "test".into(),
+            base_url: "http://localhost".into(),
+            sessions: Default::default(),
+        });
+        create_paste(State(state.clone()), Form(serde_json::from_value(json!({
+            "id":"access-test", "content":"export default () => 'cached';", "kind":"javascript", "scheduler":"*/5 * * * *"
+        })).unwrap())).await.unwrap();
+        sqlx::query("UPDATE pastes SET cached_content = 'cached', cache_updated_at = ? WHERE id = 'access-test'")
+            .bind(now_ts()).execute(&state.db).await.unwrap();
+        let update = |value| {
+            update_paste(
+                Path("access-test".into()),
+                State(state.clone()),
+                axum::Json(serde_json::from_value(value).unwrap()),
+            )
+        };
+        let detail = || get_paste(Path("access-test".into()), State(state.clone()));
+        let raw = |key: Option<&str>| {
+            raw_paste(
+                Path("access-test".into()),
+                Query(RawQuery {
+                    key: key.map(str::to_owned),
+                }),
+                State(state.clone()),
+            )
+        };
+
+        update(json!({"visibility":"private", "access_password":"first & key", "expires_in":3600}))
+            .await
+            .unwrap();
+        let axum::Json(first) = detail().await.unwrap();
+        assert!(first.raw_url.contains("key=first%20%26%20key"));
+        assert_eq!(first.cached_content.as_deref(), Some("cached"));
+        assert!(first.expires_at.is_some());
+        assert_eq!(raw(None).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            raw(Some("first & key")).await.unwrap().status(),
+            StatusCode::OK
+        );
+        update(json!({"title":"New title"})).await.unwrap();
+        let axum::Json(preserved) = detail().await.unwrap();
+        assert_eq!(first.raw_url, preserved.raw_url);
+        assert_eq!(first.expires_at, preserved.expires_at);
+
+        update(json!({"access_password":"new-key", "expires_at":""}))
+            .await
+            .unwrap();
+        assert_eq!(
+            raw(Some("first & key")).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(raw(Some("new-key")).await.unwrap().status(), StatusCode::OK);
+        assert!(detail().await.unwrap().0.expires_at.is_none());
+        update(json!({"access_password":""})).await.unwrap();
+        let generated = detail().await.unwrap().0.raw_url;
+        assert!(generated.contains("?key="));
+        assert!(!generated.ends_with("?key="));
+        assert_eq!(
+            raw(Some("new-key")).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        for invalid in [
+            json!({"visibility":"invalid"}),
+            json!({"expires_at":"invalid"}),
+            json!({"expires_at":"2000-01-01T00:00:00Z"}),
+            json!({"expires_in":-1}),
+            json!({"expires_in":i64::MAX}),
+            json!({"expires_in":3600,"expires_at":""}),
+        ] {
+            assert!(matches!(
+                update(invalid).await,
+                Err(AppError::BadRequest(_))
+            ));
+        }
+        assert_eq!(
+            detail().await.unwrap().0.raw_url,
+            generated,
+            "invalid updates must be atomic"
+        );
+        let future = format_ts(now_ts() + 7200);
+        update(json!({"expires_at":future})).await.unwrap();
+        assert_eq!(
+            detail().await.unwrap().0.expires_at.as_deref(),
+            Some(future.as_str())
+        );
+        update(json!({"visibility":"public"})).await.unwrap();
+        let axum::Json(public) = detail().await.unwrap();
+        assert_eq!(public.raw_url, "http://localhost/raw/access-test");
+        assert_eq!(public.cached_content.as_deref(), Some("cached"));
+        assert_eq!(raw(None).await.unwrap().status(), StatusCode::OK);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT revision FROM pastes WHERE id = 'access-test'")
+                .fetch_one(&state.db)
+                .await
+                .unwrap(),
+            0
+        );
+        update(json!({"visibility":"private"})).await.unwrap();
+        assert_ne!(detail().await.unwrap().0.raw_url, generated);
+        assert_eq!(raw(None).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    }
 }

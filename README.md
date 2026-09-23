@@ -126,6 +126,14 @@ unsaved code. The result, console logs, errors, and elapsed time appear on the
 page. Preview makes real HTTP requests, including POST requests. Saving code does
 not require a successful preview.
 
+Create pastes at `/new`; use **Edit paste** to open `/pastes/<id>/edit`.
+Both are full pages. The editor, preview, and current cached result each have a
+**Full screen** toggle; press **Esc** to return to the page without losing changes.
+The edit page also supports Public/Private visibility, changing or generating an
+access key, and changing/removing the expiration. Saving returns to the detail
+page with the updated Raw URL. Rotating a private key invalidates old private
+links; switching to Public removes the key requirement.
+
 Scripts are JavaScript ES modules with a **default-exported function**. The server
 loads the module and calls that function once, awaiting its result. Synchronous
 and async functions are supported. Return a **string** (including an empty
@@ -261,6 +269,14 @@ in `error`; authentication/request errors use HTTP status codes. `PUT
 Omitted update fields are preserved; `"scheduler":""` switches to per-request
 execution. Detail responses include `scheduler`, `last_run_at`, `last_error`,
 `cache_updated_at`, and `next_run_at`; timestamps are RFC 3339 UTC.
+
+Updates also accept `visibility` (`public` or `private`), `access_password`, and
+either `expires_at` (a future RFC 3339 timestamp) or `expires_in` (positive seconds).
+Use `"expires_at":""` to remove expiration. Omit expiration fields to keep the
+existing deadline. For Private pastes, omitting `access_password` preserves the
+current key (generating one when switching from Public); an empty string
+generates a new key. Public pastes have no access key. Access and expiration
+changes preserve scheduled results and do not rerun the script.
 
 ### Building the embedded runtime
 

@@ -106,6 +106,10 @@ pub struct CreatePasteResponse {
 
 #[derive(Deserialize)]
 pub struct UpdatePasteForm {
+    pub visibility: Option<String>,
+    pub access_password: Option<String>,
+    pub expires_at: Option<String>,
+    pub expires_in: Option<i64>,
     pub scheduler: Option<String>,
     pub kind: Option<String>,
     pub title: Option<String>,
@@ -129,9 +133,22 @@ pub fn parse_expiry(
     expires_at: Option<&str>,
     expires_in: Option<i64>,
 ) -> Result<Option<i64>, AppError> {
+    if expires_at.is_some() && expires_in.is_some() {
+        return Err(AppError::BadRequest(
+            "Use expires_at or expires_in, not both".into(),
+        ));
+    }
     if let Some(expires_at) = expires_at {
+        if expires_at.is_empty() {
+            return Ok(None);
+        }
         let parsed = OffsetDateTime::parse(expires_at, &Rfc3339)
             .map_err(|_| AppError::BadRequest("expires_at must be RFC3339".into()))?;
+        if parsed.unix_timestamp() <= now_ts() {
+            return Err(AppError::BadRequest(
+                "Expiration must be in the future".into(),
+            ));
+        }
         return Ok(Some(parsed.unix_timestamp()));
     }
 
@@ -139,7 +156,11 @@ pub fn parse_expiry(
         if expires_in <= 0 {
             return Err(AppError::BadRequest("expires_in must be > 0".into()));
         }
-        return Ok(Some(now_ts() + expires_in));
+        return now_ts()
+            .checked_add(expires_in)
+            .filter(|ts| OffsetDateTime::from_unix_timestamp(*ts).is_ok())
+            .map(Some)
+            .ok_or_else(|| AppError::BadRequest("expires_in is too large".into()));
     }
 
     Ok(None)

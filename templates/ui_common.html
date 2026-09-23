@@ -12,5 +12,13 @@ window.PasteUI = {
 document.addEventListener('click', e => { const button = e.target.closest('[data-copy]'); if(button) PasteUI.copy(button.dataset.copy, button); });
 PasteUI.times();
 setInterval(() => { if(!document.hidden) PasteUI.times(); }, 30000);
+(() => {
+ let panel=null,trigger=null,previousOverflow='';
+ function close(){if(!panel)return;panel.classList.remove('panel-expanded');trigger.textContent='Full screen';trigger.setAttribute('aria-pressed','false');document.body.style.overflow=previousOverflow;const focus=trigger;panel=null;trigger=null;focus.focus({preventScroll:true});}
+ document.addEventListener('click',e=>{const button=e.target.closest('[data-expand]');if(!button)return;if(trigger===button){close();return;}close();panel=document.getElementById(button.dataset.expand);if(!panel)return;trigger=button;previousOverflow=document.body.style.overflow;document.body.style.overflow='hidden';panel.classList.add('panel-expanded');button.textContent='Exit full screen';button.setAttribute('aria-pressed','true');button.focus({preventScroll:true});});
+ document.addEventListener('keydown',e=>{if(!panel)return;if(e.key==='Escape'){e.preventDefault();close();return;}if(e.key==='Tab'){const focusable=[...panel.querySelectorAll('button,a[href],input,select,textarea,[tabindex="0"],summary')].filter(el=>!el.disabled&&el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&(document.activeElement===first||!panel.contains(document.activeElement))){e.preventDefault();last?.focus();}else if(!e.shiftKey&&(document.activeElement===last||!panel.contains(document.activeElement))){e.preventDefault();first?.focus();}}});
+ // Switching content type can hide preview while it is expanded.
+ document.addEventListener('change',()=>{if(panel?.classList.contains('hidden'))close();});
+})();
 </script>
 {% endraw %}

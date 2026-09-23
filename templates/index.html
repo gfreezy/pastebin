@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pastebin</title>{% include "ui_styles.html" %}</head>
 <body><main class="shell">
 <header class="topbar"><a href="/" class="brand"><span class="brand-mark">/p</span>Pastebin</a><nav class="navlinks"><a href="/totp-setup">Security</a><a href="/logout">Sign out</a></nav></header>
-<div class="page-heading"><div><h1>Your pastes</h1><p class="subtitle">Text, scripts, and the links that bring them together.</p></div><button class="btn btn-primary" id="new-paste">＋ New paste</button></div>
+<div class="page-heading"><div><h1>Your pastes</h1><p class="subtitle">Text, scripts, and the links that bring them together.</p></div><a class="btn btn-primary" href="/new" id="new-paste">＋ New paste</a></div>
 <section class="panel" aria-label="Saved pastes"><div class="toolbar"><input id="search" type="search" placeholder="Search by title or ID…" aria-label="Search pastes"><select id="type-filter" aria-label="Filter by type"><option value="all">All types</option><option value="text">Text</option><option value="javascript">JavaScript</option></select><span class="count" id="paste-count"></span></div>
 <div class="table-wrap"><table><thead><tr><th>Name</th><th class="type-column">Type</th><th class="optional-column">Execution</th><th class="optional-column">Access</th><th class="optional-column">Created</th><th><span class="hint">Actions</span></th></tr></thead><tbody id="paste-list">
 {% for paste in pastes %}
@@ -15,53 +15,8 @@
 </tbody></table></div><div class="empty hidden" id="list-empty"><strong>No pastes yet</strong><p>Create your first paste to get a shareable Raw URL.</p></div></section>
 <p class="footer-note">{% if pastes.is_empty() %}Start with a note, a configuration file, or a JavaScript generator.{% else %}Open a paste to edit its content, run a preview, or check its schedule.{% endif %}</p>
 </main>
-<dialog class="dialog" id="create-dialog" aria-labelledby="create-title"><form id="paste-form">
-<div class="dialog-header"><div><h2 id="create-title">New paste</h2><p class="hint">Give it a name, add content, and create a link.</p></div><button type="button" class="btn btn-quiet close-create" aria-label="Close new paste">×</button></div>
-<div class="dialog-body"><div class="form-grid"><div class="field"><label for="f-title">Title</label><input id="f-title" name="title" placeholder="Untitled paste" autofocus></div><div class="field"><label for="f-kind">Type</label><select id="f-kind" name="kind"><option value="text">Text</option><option value="javascript">JavaScript</option></select></div></div>
-<details class="advanced"><summary>Link & access settings <span class="hint">· Public · Never expires by default</span></summary><div class="advanced-grid">
-<div class="field"><label for="f-id">Custom ID</label><input id="f-id" name="id" placeholder="Generated automatically"></div><div class="field"><label for="f-vis">Visibility</label><select id="f-vis" name="visibility"><option value="public">Public</option><option value="private">Private · access key required</option></select></div><div class="field"><label for="f-expiry">Expires</label><select id="f-expiry"><option value="">Never</option><option value="3600">In 1 hour</option><option value="86400">In 1 day</option><option value="604800">In 7 days</option><option value="2592000">In 30 days</option><option value="custom">Custom date…</option></select></div>
-<div class="field hidden" id="password-row"><label for="f-pass">Access key</label><input id="f-pass" name="access_password" placeholder="Generated automatically" autocomplete="off"><span class="hint">The key is included in the Raw URL.</span></div><div class="field hidden" id="custom-expiry"><label for="f-expires-at">Expiration date</label><input id="f-expires-at" type="datetime-local"><span class="hint">Your browser’s local time.</span></div></div></details>
-<section id="schedule-controls" class="schedule-box hidden">
-<div class="field-label">When should this script run?</div>
-<select id="execution-mode" hidden aria-label="Execution"><option value="always" selected>On every request</option><option value="scheduled" >On a schedule</option></select>
-<div class="execution-options" role="radiogroup" aria-label="When to run">
-<label class="execution-option"><input type="radio" name="execution-choice" value="always"><span><strong>Every request</strong><small>Run when someone opens the Raw URL. Return a fresh result.</small></span></label>
-<label class="execution-option"><input type="radio" name="execution-choice" value="scheduled"><span><strong>On a schedule</strong><small>Run automatically and save the result. The Raw URL reads the saved result.</small></span></label>
-</div>
-<div id="cron-fields" class="schedule-frequency">
-{% include "schedule_builder.html" %}
-<div class="field hidden" id="custom-cron"><label for="f-scheduler">Cron expression</label><input id="f-scheduler" name="scheduler" class="mono" value="" placeholder="*/5 * * * *" aria-describedby="cron-help"><span class="hint" id="cron-help">minute · hour · day · month · weekday. Example: 0 9 * * * = daily at 09:00.</span></div>
-<div class="schedule-summary"><p id="schedule-summary" aria-live="polite"></p><div class="schedule-expression"><span class="hint">Cron</span><code id="schedule-generated"></code><button type="button" class="btn btn-quiet btn-small" id="edit-cron">Edit Cron</button></div></div>
-</div><p id="execution-description" class="hint schedule-hint" aria-live="polite"></p></section>
-<div id="workspace" class="workspace"><section class="panel editor-panel"><div class="panel-head"><label id="content-label" for="f-content" class="panel-title">Content</label><div class="actions"><button type="button" class="btn btn-quiet btn-small hidden" data-js-only id="example-script">Use example</button><label class="file-label">Import file<input type="file" class="file-input" id="f-file"></label></div></div><textarea id="f-content" name="content" class="editor" required placeholder="Paste or drop your content here…" spellcheck="false"></textarea><div class="editor-footer"><span id="char-count">0 characters</span><span>UTF-8</span></div></section>{% include "script_preview.html" %}</div>
-<p class="hint schedule-hint hidden" data-js-only>Export a default function that returns a string. HTTPS ESM imports are supported. Preview sends real requests.</p><div id="form-error" class="error-banner hidden" role="alert"></div></div>
-<div class="dialog-footer"><span class="hint">⌘ / Ctrl + S to create</span><div class="actions"><button class="btn close-create" type="button">Cancel</button><button class="btn btn-primary" type="submit" id="submit-btn">Create paste →</button></div></div></form></dialog>
 {% include "ui_common.html" %}
-{% raw %}<script>
-(() => {
- const dialog=document.getElementById('create-dialog'),form=document.getElementById('paste-form'),submit=document.getElementById('submit-btn');
- const title=document.getElementById('f-title'),code=document.getElementById('f-content'),kind=document.getElementById('f-kind'),mode=document.getElementById('execution-mode'),cron=document.getElementById('f-scheduler');
- let dirty=false,saving=false;form.addEventListener('input',()=>dirty=true);form.addEventListener('change',()=>dirty=true);
- document.getElementById('new-paste').onclick=()=>{dialog.showModal();title.focus();};
- function close(){if(saving)return;if(dirty&&!confirm('Discard this unsaved paste?'))return;dialog.close();form.reset();dirty=false;PasteUI.error('');toggleSettings();}
- document.querySelectorAll('.close-create').forEach(b=>b.onclick=close);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
- function toggleSettings(){document.getElementById('password-row').classList.toggle('hidden',document.getElementById('f-vis').value!=='private');const custom=document.getElementById('f-expiry').value==='custom';document.getElementById('custom-expiry').classList.toggle('hidden',!custom);document.getElementById('f-expires-at').required=custom;}
- document.getElementById('f-vis').onchange=toggleSettings;document.getElementById('f-expiry').onchange=toggleSettings;
- form.onsubmit=async e=>{e.preventDefault();if(saving||!PasteUI.validateSchedule(kind,mode,cron))return;PasteUI.error('');saving=true;submit.disabled=true;submit.textContent='Creating…';
-  const data=new FormData(form),expiry=document.getElementById('f-expiry').value;
-  if(!title.value.trim())data.delete('title');
-  if(kind.value!=='javascript'||mode.value!=='scheduled')data.delete('scheduler');
-  if(expiry==='custom')data.set('expires_at',new Date(document.getElementById('f-expires-at').value).toISOString());else if(expiry)data.set('expires_in',expiry);
-  const controls=[...form.querySelectorAll('input,select,textarea,button')].map(el=>[el,el.disabled]);controls.forEach(([el])=>el.disabled=true);
-  try{const res=await fetch('/api/pastes',{method:'POST',body:new URLSearchParams(data)});if(!res.ok)throw new Error(res.status===401?'Your session expired. Sign in again.':await res.text());const paste=await res.json();dirty=false;location.href='/pastes/'+encodeURIComponent(paste.id)+'?created=1';}
-  catch(error){PasteUI.error(error.message);}finally{controls.forEach(([el,disabled])=>el.disabled=disabled);saving=false;submit.disabled=false;submit.textContent='Create paste →';}
- };
- document.addEventListener('keydown',e=>{if(dialog.open&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();form.requestSubmit();}});
- window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+{% raw %}<script>(()=>{
  function filter(){const q=document.getElementById('search').value.toLowerCase().trim(),type=document.getElementById('type-filter').value;const rows=[...document.querySelectorAll('#paste-list tr')];let shown=0;rows.forEach(row=>{const visible=(type==='all'||row.dataset.kind===type)&&`${row.dataset.title} ${row.dataset.pasteId}`.toLowerCase().includes(q);row.hidden=!visible;if(visible)shown++;});document.getElementById('paste-count').textContent=`${shown} of ${rows.length} pastes`;const empty=document.getElementById('list-empty');empty.classList.toggle('hidden',shown!==0);empty.querySelector('strong').textContent=rows.length?'No matching pastes':'No pastes yet';empty.querySelector('p').textContent=rows.length?'Try a different search or type filter.':'Create your first paste to get a shareable Raw URL.';}
  document.getElementById('search').oninput=filter;document.getElementById('type-filter').onchange=filter;filter();
- async function importFile(file){if(!file)return;try{if(file.size>2*1024*1024)throw new Error('Choose a text file smaller than 2 MiB.');code.value=await file.text();if(!title.value.trim())title.value=file.name;if(file.name.endsWith('.js'))kind.value='javascript';code.dispatchEvent(new Event('input',{bubbles:true}));}catch(error){PasteUI.error(error.message);}}
- document.getElementById('f-file').onchange=e=>importFile(e.target.files[0]);code.ondragover=e=>{e.preventDefault();code.classList.add('drag-over');};code.ondragleave=()=>code.classList.remove('drag-over');code.ondrop=e=>{code.classList.remove('drag-over');if(e.dataTransfer.files.length){e.preventDefault();importFile(e.dataTransfer.files[0]);}};
-})();
-</script>{% endraw %}
-</body></html>
+})();</script>{% endraw %}</body></html>
