@@ -1,0 +1,9 @@
+<div class="schedule-builder-fields">
+<div class="field"><label for="schedule-frequency">Repeat <span class="hint">· {{ script_timezone }}</span></label><select id="schedule-frequency"><option value="minutes">Every N minutes</option><option value="hours">Every N hours</option><option value="daily">Daily</option><option value="weekly">Weekly / weekdays</option><option value="monthly">Monthly</option><option value="custom">Custom Cron</option></select></div>
+<div class="field" id="interval-field"><label for="schedule-interval">Interval</label><div class="interval-input"><input type="number" id="schedule-interval" min="1" max="59" step="1" value="5" required aria-describedby="schedule-summary"><span id="interval-unit">minutes</span></div></div>
+<div class="field hidden" id="weekday-field"><label for="schedule-weekday">Day</label><select id="schedule-weekday"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option><option value="1-5">Weekdays (Mon–Fri)</option><option value="0,6">Weekends (Sat–Sun)</option></select></div>
+<div class="field hidden" id="monthday-field"><label for="schedule-monthday">Day of month</label><input id="schedule-monthday" type="number" min="1" max="31" step="1" value="1" required disabled></div>
+<div class="field hidden" id="time-field"><label for="schedule-time">At time</label><input id="schedule-time" type="time" value="09:00" step="60" required disabled></div>
+<div class="field hidden" id="minute-field"><label for="schedule-minute">At minute</label><input id="schedule-minute" type="number" min="0" max="59" step="1" value="0" required disabled></div>
+</div>
+<div class="schedule-quick" id="schedule-quick" aria-label="Common intervals"></div>

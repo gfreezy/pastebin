@@ -1,613 +1,67 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pastebin</title>
-  <style>
-    *,*::before,*::after { box-sizing: border-box; }
-
-    body {
-      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-      color: #1a1a1a;
-      background: #fafafa;
-      margin: 0;
-      padding: 3rem 1.5rem;
-      line-height: 1.6;
-    }
-
-    .container {
-      max-width: 860px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      margin: 0 0 2.5rem;
-    }
-
-    h2 {
-      font-size: 0.8rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #888;
-      margin: 0 0 1rem;
-    }
-
-    /* Form */
-    .card {
-      background: #fff;
-      border: 1px solid #e8e8e8;
-      border-radius: 8px;
-      padding: 1.5rem;
-      margin-bottom: 2.5rem;
-    }
-
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-
-    .form-row.three { grid-template-columns: 1fr 1fr 1fr; }
-
-    .field { display: flex; flex-direction: column; }
-
-    .field label {
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: #666;
-      margin-bottom: 0.3rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .field input, .field select, .field textarea {
-      font-family: inherit;
-      font-size: 0.9rem;
-      padding: 0.5rem 0.65rem;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      background: #fff;
-      color: #1a1a1a;
-      transition: border-color 0.15s;
-      outline: none;
-    }
-
-    .field input:focus, .field select:focus, .field textarea:focus {
-      border-color: #999;
-    }
-
-    .field textarea {
-      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
-      font-size: 0.85rem;
-      min-height: 140px;
-      resize: vertical;
-      line-height: 1.5;
-    }
-
-    .hidden { display: none !important; }
-
-    .form-actions {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 1rem;
-    }
-
-    .btn {
-      font-family: inherit;
-      font-size: 0.85rem;
-      font-weight: 500;
-      padding: 0.5rem 1.5rem;
-      border: 1px solid #1a1a1a;
-      border-radius: 5px;
-      background: #1a1a1a;
-      color: #fff;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-
-    .btn:hover { opacity: 0.8; }
-
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .btn-icon {
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.25rem;
-      color: #aaa;
-      border-radius: 4px;
-      display: inline-flex;
-      align-items: center;
-      transition: color 0.15s;
-    }
-
-    .btn-icon:hover { color: #1a1a1a; }
-
-    .delete-btn:hover { color: #c0392b; }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      top: 1.5rem;
-      right: 1.5rem;
-      background: #fff;
-      border: 1px solid #e8e8e8;
-      border-radius: 8px;
-      padding: 1rem 1.25rem;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      z-index: 100;
-      animation: slide-in 0.25s ease-out;
-      max-width: 480px;
-    }
-
-    .toast .mono { font-size: 0.8rem; word-break: break-all; }
-
-    .toast-close {
-      margin-left: auto;
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #aaa;
-      font-size: 1.1rem;
-      padding: 0 0.25rem;
-    }
-
-    .toast-close:hover { color: #1a1a1a; }
-
-    @keyframes slide-in {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Table */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    thead th {
-      font-size: 0.7rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #999;
-      text-align: left;
-      padding: 0 0.75rem 0.6rem;
-      border-bottom: 1px solid #e8e8e8;
-    }
-
-    tbody td {
-      padding: 0.65rem 0.75rem;
-      font-size: 0.85rem;
-      border-bottom: 1px solid #f0f0f0;
-      vertical-align: middle;
-    }
-
-    tbody tr:hover { background: #f8f8f8; }
-
-    .mono { font-family: "SF Mono", "Fira Code", "Consolas", monospace; }
-    .text-sm { font-size: 0.78rem; }
-    .muted { color: #bbb; }
-
-    .badge {
-      display: inline-block;
-      font-size: 0.7rem;
-      font-weight: 500;
-      padding: 0.15rem 0.5rem;
-      border-radius: 3px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .badge-public { background: #e8f5e9; color: #388e3c; }
-    .badge-private { background: #fff3e0; color: #e65100; }
-
-    .url-cell {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 2.5rem 1rem !important;
-      color: #bbb;
-      font-style: italic;
-    }
-
-    .copy-ok { color: #388e3c !important; }
-
-    .custom-expiry { margin-top: 0.5rem; }
-
-    .file-drop {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 1.5px dashed #ddd;
-      border-radius: 5px;
-      padding: 0.6rem 1rem;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-    }
-
-    .file-drop:hover, .file-drop.drag-over {
-      border-color: #999;
-      background: #f5f5f5;
-    }
-
-    .file-drop input[type="file"] { display: none; }
-
-    .file-drop-text {
-      font-size: 0.8rem;
-      color: #999;
-    }
-
-    .nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 2.5rem;
-    }
-
-    .nav h1 { margin: 0; }
-
-    .nav-links {
-      display: flex;
-      gap: 1.25rem;
-      align-items: center;
-    }
-
-    .nav-links a {
-      font-size: 0.78rem;
-      color: #888;
-      text-decoration: none;
-      transition: color 0.15s;
-    }
-
-    .nav-links a:hover { color: #1a1a1a; }
-
-    @media (max-width: 640px) {
-      body { padding: 1.5rem 1rem; }
-      .form-row, .form-row.three { grid-template-columns: 1fr; }
-      .url-cell { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
-    }
-  </style>
-</head>
-<body>
-<div class="container">
-  <div class="nav">
-    <h1>Pastebin</h1>
-    <div class="nav-links">
-      <a href="/totp-setup">TOTP</a>
-      <a href="/logout">Logout</a>
-    </div>
-  </div>
-
-  <h2>New Paste</h2>
-  <div class="card">
-    <form id="paste-form">
-      <div class="form-row three">
-        <div class="field">
-          <label for="f-id">ID</label>
-          <input id="f-id" type="text" name="id" placeholder="auto-generated" />
-        </div>
-        <div class="field">
-          <label for="f-title">Title</label>
-          <input id="f-title" type="text" name="title" placeholder="optional" />
-        </div>
-        <div class="field">
-          <label for="f-vis">Visibility</label>
-          <select id="f-vis" name="visibility">
-            <option value="public">Public</option>
-            <option value="private">Private</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row" id="password-row">
-        <div class="field">
-          <label for="f-pass">Access Key</label>
-          <input id="f-pass" type="text" name="access_password" placeholder="auto-generated if empty" />
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="field">
-          <label for="f-expiry">Expires</label>
-          <select id="f-expiry">
-            <option value="">Never</option>
-            <option value="3600">1 hour</option>
-            <option value="86400">1 day</option>
-            <option value="604800">7 days</option>
-            <option value="2592000">30 days</option>
-            <option value="custom">Custom...</option>
-          </select>
-          <div id="custom-expiry" class="custom-expiry hidden">
-            <input type="text" name="expires_at" placeholder="RFC 3339, e.g. 2026-01-01T00:00:00Z" />
-          </div>
-          <input type="hidden" name="expires_in" id="f-expires-in" />
-        </div>
-      </div>
-      <div class="field">
-        <label>File</label>
-        <label class="file-drop" id="file-drop">
-          <input type="file" id="f-file" />
-          <span class="file-drop-text" id="file-drop-text">Choose file or drag &amp; drop</span>
-        </label>
-      </div>
-      <div class="field">
-        <label for="f-content">Content</label>
-        <textarea id="f-content" name="content" required placeholder="paste your text here..."></textarea>
-      </div>
-      <div class="form-actions">
-        <button class="btn" type="submit" id="submit-btn">Create</button>
-      </div>
-    </form>
-  </div>
-
-  <h2>Pastes</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Title</th>
-        <th>Visibility</th>
-        <th>Created</th>
-        <th>Expires</th>
-        <th>URL</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="paste-list">
-      {% for paste in pastes %}
-      <tr>
-        <td class="mono"><a href="/pastes/{{ paste.id }}">{{ paste.id }}</a></td>
-        <td>{{ paste.title.as_deref().unwrap_or("") }}</td>
-        <td><span class="badge badge-{{ paste.visibility }}">{{ paste.visibility }}</span></td>
-        <td><time datetime="{{ paste.created_at }}">{{ paste.created_at }}</time></td>
-        <td>
-          {% match paste.expires_at %}
-            {% when Some with (exp) %}
-              <time datetime="{{ exp }}">{{ exp }}</time>
-            {% when None %}
-              <span class="muted">&mdash;</span>
-          {% endmatch %}
-        </td>
-        <td class="url-cell">
-          <a href="{{ paste.raw_url }}" class="mono text-sm" target="_blank">/raw/{{ paste.id }}{% if paste.needs_key %}?key=...{% endif %}</a>
-          <button class="btn-icon copy-btn" data-url="{{ paste.raw_url }}" title="Copy URL">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-          </button>
-        </td>
-        <td>
-          <button class="btn-icon delete-btn" data-id="{{ paste.id }}" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-          </button>
-        </td>
-      </tr>
-      {% endfor %}
-      {% if pastes.is_empty() %}
-      <tr><td colspan="7" class="empty-state">No pastes yet. Create one above.</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pastebin</title>{% include "ui_styles.html" %}</head>
+<body><main class="shell">
+<header class="topbar"><a href="/" class="brand"><span class="brand-mark">/p</span>Pastebin</a><nav class="navlinks"><a href="/totp-setup">Security</a><a href="/logout">Sign out</a></nav></header>
+<div class="page-heading"><div><h1>Your pastes</h1><p class="subtitle">Text, scripts, and the links that bring them together.</p></div><button class="btn btn-primary" id="new-paste">＋ New paste</button></div>
+<section class="panel" aria-label="Saved pastes"><div class="toolbar"><input id="search" type="search" placeholder="Search by title or ID…" aria-label="Search pastes"><select id="type-filter" aria-label="Filter by type"><option value="all">All types</option><option value="text">Text</option><option value="javascript">JavaScript</option></select><span class="count" id="paste-count"></span></div>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th class="type-column">Type</th><th class="optional-column">Execution</th><th class="optional-column">Access</th><th class="optional-column">Created</th><th><span class="hint">Actions</span></th></tr></thead><tbody id="paste-list">
+{% for paste in pastes %}
+<tr data-paste-id="{{ paste.id }}" data-title="{{ paste.title.as_deref().unwrap_or("") }}" data-kind="{{ paste.kind }}">
+<td><a class="paste-name" href="/pastes/{{ paste.id|urlencode }}">{% if paste.title.as_deref().unwrap_or("").is_empty() %}Untitled paste{% else %}{{ paste.title.as_deref().unwrap_or("") }}{% endif %}</a><span class="paste-id">{{ paste.id }}</span><span class="badge mobile-type">{{ paste.kind }}</span>{% match paste.expires_at %}{% when Some with (exp) %}<span class="expires-note">Expires <time datetime="{{ exp }}">{{ exp }}</time></span>{% when None %}{% endmatch %}</td>
+<td class="type-column">{% if paste.kind == "javascript" %}<span class="badge badge-js">JS · JavaScript</span>{% else %}<span class="badge">Text</span>{% endif %}</td>
+<td class="optional-column execution">{% match paste.scheduler %}{% when Some with (cron) %}<span class="mono" title="Scheduled · {{ script_timezone }}">{{ cron }}</span><span class="paste-id">Scheduled cache</span>{% when None %}{% if paste.kind == "javascript" %}On request{% else %}—{% endif %}{% endmatch %}</td>
+<td class="optional-column"><span class="badge badge-{{ paste.visibility }}">{{ paste.visibility }}</span></td><td class="optional-column hint"><time datetime="{{ paste.created_at }}">{{ paste.created_at }}</time></td>
+<td><div class="row-actions"><button class="btn btn-quiet" data-copy="{{ paste.raw_url }}" title="Copy Raw URL">Copy link</button></div></td>
+</tr>{% endfor %}
+</tbody></table></div><div class="empty hidden" id="list-empty"><strong>No pastes yet</strong><p>Create your first paste to get a shareable Raw URL.</p></div></section>
+<p class="footer-note">{% if pastes.is_empty() %}Start with a note, a configuration file, or a JavaScript generator.{% else %}Open a paste to edit its content, run a preview, or check its schedule.{% endif %}</p>
+</main>
+<dialog class="dialog" id="create-dialog" aria-labelledby="create-title"><form id="paste-form">
+<div class="dialog-header"><div><h2 id="create-title">New paste</h2><p class="hint">Give it a name, add content, and create a link.</p></div><button type="button" class="btn btn-quiet close-create" aria-label="Close new paste">×</button></div>
+<div class="dialog-body"><div class="form-grid"><div class="field"><label for="f-title">Title</label><input id="f-title" name="title" placeholder="Untitled paste" autofocus></div><div class="field"><label for="f-kind">Type</label><select id="f-kind" name="kind"><option value="text">Text</option><option value="javascript">JavaScript</option></select></div></div>
+<details class="advanced"><summary>Link & access settings <span class="hint">· Public · Never expires by default</span></summary><div class="advanced-grid">
+<div class="field"><label for="f-id">Custom ID</label><input id="f-id" name="id" placeholder="Generated automatically"></div><div class="field"><label for="f-vis">Visibility</label><select id="f-vis" name="visibility"><option value="public">Public</option><option value="private">Private · access key required</option></select></div><div class="field"><label for="f-expiry">Expires</label><select id="f-expiry"><option value="">Never</option><option value="3600">In 1 hour</option><option value="86400">In 1 day</option><option value="604800">In 7 days</option><option value="2592000">In 30 days</option><option value="custom">Custom date…</option></select></div>
+<div class="field hidden" id="password-row"><label for="f-pass">Access key</label><input id="f-pass" name="access_password" placeholder="Generated automatically" autocomplete="off"><span class="hint">The key is included in the Raw URL.</span></div><div class="field hidden" id="custom-expiry"><label for="f-expires-at">Expiration date</label><input id="f-expires-at" type="datetime-local"><span class="hint">Your browser’s local time.</span></div></div></details>
+<section id="schedule-controls" class="schedule-box hidden">
+<div class="field-label">When should this script run?</div>
+<select id="execution-mode" hidden aria-label="Execution"><option value="always" selected>On every request</option><option value="scheduled" >On a schedule</option></select>
+<div class="execution-options" role="radiogroup" aria-label="When to run">
+<label class="execution-option"><input type="radio" name="execution-choice" value="always"><span><strong>Every request</strong><small>Run when someone opens the Raw URL. Return a fresh result.</small></span></label>
+<label class="execution-option"><input type="radio" name="execution-choice" value="scheduled"><span><strong>On a schedule</strong><small>Run automatically and save the result. The Raw URL reads the saved result.</small></span></label>
 </div>
-
-{% raw %}
-<script>
-(function() {
-  // --- Visibility toggle ---
-  const vis = document.getElementById('f-vis');
-  const passRow = document.getElementById('password-row');
-  function togglePass() {
-    passRow.classList.toggle('hidden', vis.value !== 'private');
-  }
-  vis.addEventListener('change', togglePass);
-  togglePass();
-
-  // --- Expiry logic ---
-  const expSel = document.getElementById('f-expiry');
-  const customExp = document.getElementById('custom-expiry');
-  const hiddenExpIn = document.getElementById('f-expires-in');
-  expSel.addEventListener('change', function() {
-    if (this.value === 'custom') {
-      customExp.classList.remove('hidden');
-      hiddenExpIn.value = '';
-    } else {
-      customExp.classList.add('hidden');
-      hiddenExpIn.value = this.value;
-      customExp.querySelector('input').value = '';
-    }
-  });
-
-  // --- Form submit ---
-  const form = document.getElementById('paste-form');
-  const submitBtn = document.getElementById('submit-btn');
-  form.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Creating...';
-
-    const fd = new FormData(form);
-    if (expSel.value && expSel.value !== 'custom') {
-      fd.set('expires_in', expSel.value);
-      fd.delete('expires_at');
-    } else if (expSel.value === 'custom') {
-      fd.delete('expires_in');
-    } else {
-      fd.delete('expires_in');
-      fd.delete('expires_at');
-    }
-
-    try {
-      const res = await fetch('/api/pastes', { method: 'POST', body: new URLSearchParams(fd) });
-      if (!res.ok) {
-        const text = await res.text();
-        alert('Error: ' + text);
-        return;
-      }
-      const data = await res.json();
-      showToast(data.raw_url);
-      form.reset();
-      togglePass();
-      expSel.value = '';
-      customExp.classList.add('hidden');
-      hiddenExpIn.value = '';
-      location.reload();
-    } catch(err) {
-      alert('Network error');
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Create';
-    }
-  });
-
-  // --- Toast ---
-  function showToast(url) {
-    const old = document.querySelector('.toast');
-    if (old) old.remove();
-    const t = document.createElement('div');
-    t.className = 'toast';
-    t.innerHTML = '<span style="color:#388e3c;font-weight:500">Created</span>'
-      + '<span class="mono">' + escapeHtml(url) + '</span>'
-      + '<button class="btn-icon copy-btn" data-url="' + escapeAttr(url) + '" title="Copy">'
-      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
-      + '</button>'
-      + '<button class="toast-close">&times;</button>';
-    document.body.appendChild(t);
-    t.querySelector('.toast-close').addEventListener('click', () => t.remove());
-    t.querySelector('.copy-btn').addEventListener('click', function() { copyUrl(this); });
-    setTimeout(() => { if (t.parentNode) t.remove(); }, 12000);
-  }
-
-  // --- Copy ---
-  document.addEventListener('click', function(e) {
-    const btn = e.target.closest('.copy-btn');
-    if (btn) copyUrl(btn);
-  });
-
-  function copyUrl(btn) {
-    const url = btn.dataset.url;
-    navigator.clipboard.writeText(url).then(() => {
-      btn.classList.add('copy-ok');
-      setTimeout(() => btn.classList.remove('copy-ok'), 1500);
-    });
-  }
-
-  // --- Delete ---
-  document.addEventListener('click', function(e) {
-    const btn = e.target.closest('.delete-btn');
-    if (!btn) return;
-    const id = btn.dataset.id;
-    if (!confirm('Delete paste ' + id + '?')) return;
-    fetch('/api/pastes/' + encodeURIComponent(id), { method: 'DELETE' })
-      .then(res => {
-        if (res.ok) {
-          btn.closest('tr').remove();
-          if (!document.querySelector('#paste-list tr')) {
-            document.getElementById('paste-list').innerHTML =
-              '<tr><td colspan="7" class="empty-state">No pastes yet. Create one above.</td></tr>';
-          }
-        } else {
-          alert('Delete failed');
-        }
-      });
-  });
-
-  // --- Relative timestamps ---
-  function relativeTime(iso) {
-    const d = new Date(iso);
-    const now = Date.now();
-    const diff = now - d.getTime();
-    if (diff < 0) return 'in ' + humanDuration(-diff);
-    return humanDuration(diff) + ' ago';
-  }
-
-  function humanDuration(ms) {
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return s + 's';
-    const m = Math.floor(s / 60);
-    if (m < 60) return m + 'm';
-    const h = Math.floor(m / 60);
-    if (h < 24) return h + 'h';
-    const d = Math.floor(h / 24);
-    if (d < 30) return d + 'd';
-    const mo = Math.floor(d / 30);
-    return mo + 'mo';
-  }
-
-  document.querySelectorAll('time').forEach(el => {
-    const iso = el.getAttribute('datetime');
-    if (iso) {
-      el.title = iso;
-      el.textContent = relativeTime(iso);
-    }
-  });
-
-  // --- File upload ---
-  const fileInput = document.getElementById('f-file');
-  const fileDrop = document.getElementById('file-drop');
-  const fileDropText = document.getElementById('file-drop-text');
-  const titleInput = document.getElementById('f-title');
-  const contentArea = document.getElementById('f-content');
-
-  function loadFile(file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      contentArea.value = e.target.result;
-      if (!titleInput.value.trim()) {
-        titleInput.value = file.name;
-      }
-      fileDropText.textContent = file.name;
-    };
-    reader.readAsText(file);
-  }
-
-  fileInput.addEventListener('change', function() {
-    if (this.files.length) loadFile(this.files[0]);
-  });
-
-  fileDrop.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    this.classList.add('drag-over');
-  });
-
-  fileDrop.addEventListener('dragleave', function() {
-    this.classList.remove('drag-over');
-  });
-
-  fileDrop.addEventListener('drop', function(e) {
-    e.preventDefault();
-    this.classList.remove('drag-over');
-    if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
-  });
-
-  // also support dropping on the textarea
-  contentArea.addEventListener('dragover', function(e) { e.preventDefault(); });
-  contentArea.addEventListener('drop', function(e) {
-    if (e.dataTransfer.files.length) {
-      e.preventDefault();
-      loadFile(e.dataTransfer.files[0]);
-    }
-  });
-
-  // --- Helpers ---
-  function escapeHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-  function escapeAttr(s) {
-    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+<div id="cron-fields" class="schedule-frequency">
+{% include "schedule_builder.html" %}
+<div class="field hidden" id="custom-cron"><label for="f-scheduler">Cron expression</label><input id="f-scheduler" name="scheduler" class="mono" value="" placeholder="*/5 * * * *" aria-describedby="cron-help"><span class="hint" id="cron-help">minute · hour · day · month · weekday. Example: 0 9 * * * = daily at 09:00.</span></div>
+<div class="schedule-summary"><p id="schedule-summary" aria-live="polite"></p><div class="schedule-expression"><span class="hint">Cron</span><code id="schedule-generated"></code><button type="button" class="btn btn-quiet btn-small" id="edit-cron">Edit Cron</button></div></div>
+</div><p id="execution-description" class="hint schedule-hint" aria-live="polite"></p></section>
+<div id="workspace" class="workspace"><section class="panel editor-panel"><div class="panel-head"><label id="content-label" for="f-content" class="panel-title">Content</label><div class="actions"><button type="button" class="btn btn-quiet btn-small hidden" data-js-only id="example-script">Use example</button><label class="file-label">Import file<input type="file" class="file-input" id="f-file"></label></div></div><textarea id="f-content" name="content" class="editor" required placeholder="Paste or drop your content here…" spellcheck="false"></textarea><div class="editor-footer"><span id="char-count">0 characters</span><span>UTF-8</span></div></section>{% include "script_preview.html" %}</div>
+<p class="hint schedule-hint hidden" data-js-only>Use <code>await fetch(url)</code> and <code>return "content"</code>. Preview sends real requests.</p><div id="form-error" class="error-banner hidden" role="alert"></div></div>
+<div class="dialog-footer"><span class="hint">⌘ / Ctrl + S to create</span><div class="actions"><button class="btn close-create" type="button">Cancel</button><button class="btn btn-primary" type="submit" id="submit-btn">Create paste →</button></div></div></form></dialog>
+{% include "ui_common.html" %}
+{% raw %}<script>
+(() => {
+ const dialog=document.getElementById('create-dialog'),form=document.getElementById('paste-form'),submit=document.getElementById('submit-btn');
+ const title=document.getElementById('f-title'),code=document.getElementById('f-content'),kind=document.getElementById('f-kind'),mode=document.getElementById('execution-mode'),cron=document.getElementById('f-scheduler');
+ let dirty=false,saving=false;form.addEventListener('input',()=>dirty=true);form.addEventListener('change',()=>dirty=true);
+ document.getElementById('new-paste').onclick=()=>{dialog.showModal();title.focus();};
+ function close(){if(saving)return;if(dirty&&!confirm('Discard this unsaved paste?'))return;dialog.close();form.reset();dirty=false;PasteUI.error('');toggleSettings();}
+ document.querySelectorAll('.close-create').forEach(b=>b.onclick=close);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
+ function toggleSettings(){document.getElementById('password-row').classList.toggle('hidden',document.getElementById('f-vis').value!=='private');const custom=document.getElementById('f-expiry').value==='custom';document.getElementById('custom-expiry').classList.toggle('hidden',!custom);document.getElementById('f-expires-at').required=custom;}
+ document.getElementById('f-vis').onchange=toggleSettings;document.getElementById('f-expiry').onchange=toggleSettings;
+ form.onsubmit=async e=>{e.preventDefault();if(saving||!PasteUI.validateSchedule(kind,mode,cron))return;PasteUI.error('');saving=true;submit.disabled=true;submit.textContent='Creating…';
+  const data=new FormData(form),expiry=document.getElementById('f-expiry').value;
+  if(!title.value.trim())data.delete('title');
+  if(kind.value!=='javascript'||mode.value!=='scheduled')data.delete('scheduler');
+  if(expiry==='custom')data.set('expires_at',new Date(document.getElementById('f-expires-at').value).toISOString());else if(expiry)data.set('expires_in',expiry);
+  const controls=[...form.querySelectorAll('input,select,textarea,button')].map(el=>[el,el.disabled]);controls.forEach(([el])=>el.disabled=true);
+  try{const res=await fetch('/api/pastes',{method:'POST',body:new URLSearchParams(data)});if(!res.ok)throw new Error(res.status===401?'Your session expired. Sign in again.':await res.text());const paste=await res.json();dirty=false;location.href='/pastes/'+encodeURIComponent(paste.id)+'?created=1';}
+  catch(error){PasteUI.error(error.message);}finally{controls.forEach(([el,disabled])=>el.disabled=disabled);saving=false;submit.disabled=false;submit.textContent='Create paste →';}
+ };
+ document.addEventListener('keydown',e=>{if(dialog.open&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();form.requestSubmit();}});
+ window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+ function filter(){const q=document.getElementById('search').value.toLowerCase().trim(),type=document.getElementById('type-filter').value;const rows=[...document.querySelectorAll('#paste-list tr')];let shown=0;rows.forEach(row=>{const visible=(type==='all'||row.dataset.kind===type)&&`${row.dataset.title} ${row.dataset.pasteId}`.toLowerCase().includes(q);row.hidden=!visible;if(visible)shown++;});document.getElementById('paste-count').textContent=`${shown} of ${rows.length} pastes`;const empty=document.getElementById('list-empty');empty.classList.toggle('hidden',shown!==0);empty.querySelector('strong').textContent=rows.length?'No matching pastes':'No pastes yet';empty.querySelector('p').textContent=rows.length?'Try a different search or type filter.':'Create your first paste to get a shareable Raw URL.';}
+ document.getElementById('search').oninput=filter;document.getElementById('type-filter').onchange=filter;filter();
+ async function importFile(file){if(!file)return;try{if(file.size>2*1024*1024)throw new Error('Choose a text file smaller than 2 MiB.');code.value=await file.text();if(!title.value.trim())title.value=file.name;if(file.name.endsWith('.js'))kind.value='javascript';code.dispatchEvent(new Event('input',{bubbles:true}));}catch(error){PasteUI.error(error.message);}}
+ document.getElementById('f-file').onchange=e=>importFile(e.target.files[0]);code.ondragover=e=>{e.preventDefault();code.classList.add('drag-over');};code.ondragleave=()=>code.classList.remove('drag-over');code.ondrop=e=>{code.classList.remove('drag-over');if(e.dataTransfer.files.length){e.preventDefault();importFile(e.dataTransfer.files[0]);}};
 })();
-</script>
-{% endraw %}
-</body>
-</html>
+</script>{% endraw %}
+</body></html>

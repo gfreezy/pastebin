@@ -1,0 +1,85 @@
+<section id="script-preview" class="preview panel hidden" aria-label="JavaScript preview">
+  <div class="panel-head"><span class="panel-title">Preview</span><div class="actions"><button type="button" class="btn btn-small hidden" id="copy-output">Copy result</button><button type="button" class="btn btn-primary btn-small" id="run-script">Run preview</button></div></div>
+  <div id="preview-empty" class="preview-empty"><strong>Your output appears here</strong><span>Run the script to see its result and logs.</span><span>⌘ / Ctrl + Enter to run</span></div>
+  <pre id="script-output" class="preview-output hidden" tabindex="0" aria-label="Execution result"></pre>
+  <div id="run-status" class="preview-status" role="status">Ready to run · Preview does not save or update the cache.</div>
+  <details class="logs" id="preview-logs"><summary>Console <span id="log-count">0</span></summary><pre id="script-logs">No logs yet.</pre></details>
+</section>
+{% include "schedule_builder_script.html" %}
+{% raw %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+ const kind = document.getElementById('f-kind') || document.getElementById('edit-kind');
+ const code = document.getElementById('f-content') || document.getElementById('edit-content');
+ const scheduler = document.getElementById('f-scheduler') || document.getElementById('edit-scheduler');
+ const mode = document.getElementById('execution-mode');
+ const choices = [...document.querySelectorAll('[name=execution-choice]')];
+ const panel = document.getElementById('script-preview'), button = document.getElementById('run-script'), status = document.getElementById('run-status');
+ const output = document.getElementById('script-output'), logs = document.getElementById('script-logs'), empty = document.getElementById('preview-empty'), copy = document.getElementById('copy-output');
+ const builder = ScheduleBuilder.init(scheduler,mode,kind);
+ let revision = 0, running = false, hasRun = false, hasOutput = false, lastOutput = '';
+ function scheduleChanged(sync=false) {
+  const js = kind.value === 'javascript', scheduled = mode.value === 'scheduled' && js;
+  document.getElementById('schedule-controls').classList.toggle('hidden', !js);
+  document.getElementById('cron-fields').classList.toggle('hidden', !scheduled);
+  scheduler.required = scheduled; scheduler.setCustomValidity('');
+  if(scheduler.id === 'f-scheduler') scheduler.disabled = !scheduled;
+  choices.forEach(choice => choice.checked = choice.value === mode.value);
+  if(sync) builder.sync(); else builder.visibility();
+  document.getElementById('execution-description').textContent = scheduled ? 'Runs once after saving, then at the selected frequency. If a run fails, the last successful result stays available.' : 'No result is cached. Each visit waits for the script to finish.';
+ }
+ function changed() {
+  revision++;
+  const js = kind.value === 'javascript';
+  if(document.getElementById('schedule-controls').classList.contains('hidden') === js) scheduleChanged();
+  panel.classList.toggle('hidden', !js); document.getElementById('workspace').classList.toggle('has-preview', js);
+  document.querySelectorAll('[data-js-only]').forEach(el => el.classList.toggle('hidden', !js));
+  document.getElementById('content-label').textContent = js ? 'JavaScript' : 'Content';
+  document.getElementById('char-count').textContent = `${code.value.length.toLocaleString()} characters`;
+  if(hasRun || running) { status.textContent = 'Code changed · Run again to update the preview.'; status.dataset.state = ''; }
+ }
+ choices.forEach(choice => choice.addEventListener('change', () => {
+  mode.value = choice.value;
+  if(mode.value === 'scheduled' && !scheduler.value.trim()) { scheduler.value = '*/5 * * * *'; scheduler.dispatchEvent(new Event('input',{bubbles:true})); }
+  mode.dispatchEvent(new Event('change',{bubbles:true}));
+ }));
+ mode.addEventListener('change', () => scheduleChanged()); kind.addEventListener('change', () => {scheduleChanged();changed();}); code.addEventListener('input', changed);
+ scheduler.addEventListener('input', () => scheduler.setCustomValidity(''));
+ document.addEventListener('paste-changed', () => {scheduleChanged(true);changed();});
+ document.querySelectorAll('[data-cron]').forEach(btn => btn.addEventListener('click', () => { scheduler.value = btn.dataset.cron; scheduler.dispatchEvent(new Event('input',{bubbles:true})); }));
+ document.getElementById('example-script')?.addEventListener('click', () => {
+  if(code.readOnly) return;
+  if(code.value.trim() && !confirm('Replace the current content with the example?')) return;
+  code.value = 'const items = ["Hello", "from JavaScript"];\nconsole.log("Generated", items.length, "items");\nreturn items.join("\\n");';
+  code.dispatchEvent(new Event('input',{bubbles:true})); code.focus();
+ });
+ document.getElementById('paste-form')?.addEventListener('reset', () => { setTimeout(() => {
+  hasRun = false; hasOutput = false; revision++; output.textContent=''; output.classList.add('hidden'); empty.classList.remove('hidden'); copy.classList.add('hidden');
+  logs.textContent='No logs yet.';document.getElementById('log-count').textContent='0';document.getElementById('preview-logs').open=false;
+  status.textContent='Ready to run · Preview does not save or update the cache.'; status.dataset.state='';scheduleChanged(true);changed();
+ },0); });
+ scheduleChanged(true);changed();
+ copy.addEventListener('click', () => { if(hasOutput) PasteUI.copy(lastOutput, copy); });
+ button.addEventListener('click', async () => {
+  if(!code.value.trim()) { status.textContent='Enter JavaScript before running.';status.dataset.state='error';code.focus();return; }
+  const runRevision=revision; running=true;button.disabled=true;button.textContent='Running…'; status.textContent='Executing script…';status.dataset.state='';
+  try {
+   const response = await fetch('/api/script-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:code.value})});
+   if(!response.ok) throw new Error(response.status===401 ? 'Your session expired. Sign in again before running.' : await response.text());
+   const result=await response.json();
+   if(runRevision!==revision) { status.textContent='Code changed during execution · Run again for the current code.';return; }
+   hasRun=true;hasOutput=!result.error;lastOutput=result.output ?? '';
+   empty.classList.add('hidden');output.classList.remove('hidden');output.classList.toggle('is-error',!!result.error);
+   output.textContent=result.error || (lastOutput === '' ? '(Empty string)' : lastOutput);
+   logs.textContent=result.logs.join('\n') || 'No console output.';document.getElementById('log-count').textContent=result.logs.length;
+   if(result.logs.length) document.getElementById('preview-logs').open=true;
+   copy.classList.toggle('hidden',!hasOutput);
+   status.textContent=`${result.error?'Execution failed':'Completed'} · ${result.duration_ms.toLocaleString()} ms · Preview only`;
+   status.dataset.state=result.error?'error':'success';
+  } catch(error) { if(runRevision===revision) {status.textContent=error.message;status.dataset.state='error';} }
+  finally {running=false;button.disabled=false;button.textContent='Run preview';}
+ });
+ document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&kind.value==='javascript'&&!panel.closest('dialog:not([open])')) {e.preventDefault();if(!running)button.click();}});
+});
+</script>
+{% endraw %}

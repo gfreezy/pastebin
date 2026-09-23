@@ -1,502 +1,72 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ paste.title.as_deref().unwrap_or("Untitled") }} - Pastebin</title>
-  <style>
-    *,*::before,*::after { box-sizing: border-box; }
-
-    body {
-      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-      color: #1a1a1a;
-      background: #fafafa;
-      margin: 0;
-      padding: 3rem 1.5rem;
-      line-height: 1.6;
-    }
-
-    .container {
-      max-width: 860px;
-      margin: 0 auto;
-    }
-
-    a { color: #1a1a1a; }
-
-    .back {
-      font-size: 0.8rem;
-      color: #888;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .back:hover { color: #1a1a1a; }
-
-    .header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .header-left { flex: 1; min-width: 0; }
-
-    h1 {
-      font-size: 1.4rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      margin: 0 0 0.5rem;
-      word-break: break-word;
-    }
-
-    h1.muted { color: #bbb; font-style: italic; font-weight: 400; }
-
-    /* Edit mode title input */
-    .title-input {
-      font-family: inherit;
-      font-size: 1.4rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      padding: 0.3rem 0.5rem;
-      width: 100%;
-      outline: none;
-      background: #fff;
-      color: #1a1a1a;
-    }
-
-    .title-input:focus { border-color: #999; }
-
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.5rem;
-      font-size: 0.78rem;
-      color: #888;
-    }
-
-    .meta-item { display: flex; align-items: center; gap: 0.3rem; }
-
-    .badge {
-      display: inline-block;
-      font-size: 0.7rem;
-      font-weight: 500;
-      padding: 0.15rem 0.5rem;
-      border-radius: 3px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .badge-public { background: #e8f5e9; color: #388e3c; }
-    .badge-private { background: #fff3e0; color: #e65100; }
-
-    .actions {
-      display: flex;
-      gap: 0.5rem;
-      flex-shrink: 0;
-    }
-
-    .btn {
-      font-family: inherit;
-      font-size: 0.8rem;
-      font-weight: 500;
-      padding: 0.4rem 1rem;
-      border: 1px solid #1a1a1a;
-      border-radius: 5px;
-      background: #1a1a1a;
-      color: #fff;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-
-    .btn:hover { opacity: 0.8; }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .btn-outline {
-      background: #fff;
-      color: #1a1a1a;
-      border-color: #ddd;
-    }
-
-    .btn-outline:hover { border-color: #999; opacity: 1; }
-
-    .btn-icon {
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 0.25rem;
-      color: #aaa;
-      border-radius: 4px;
-      display: inline-flex;
-      align-items: center;
-      transition: color 0.15s;
-    }
-
-    .btn-icon:hover { color: #1a1a1a; }
-
-    .copy-ok { color: #388e3c !important; }
-
-    .hidden { display: none !important; }
-
-    /* Content card */
-    .card {
-      background: #fff;
-      border: 1px solid #e8e8e8;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.6rem 1rem;
-      border-bottom: 1px solid #f0f0f0;
-      background: #fafafa;
-    }
-
-    .card-header-label {
-      font-size: 0.7rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #999;
-    }
-
-    .content-view {
-      padding: 1rem 1.25rem;
-      overflow-x: auto;
-    }
-
-    .content-view pre {
-      margin: 0;
-      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .content-edit textarea {
-      width: 100%;
-      min-height: 300px;
-      border: none;
-      padding: 1rem 1.25rem;
-      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      resize: vertical;
-      outline: none;
-      color: #1a1a1a;
-      background: #fff;
-    }
-
-    .url-row {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      margin-top: 1.5rem;
-      padding: 0.6rem 1rem;
-      background: #fff;
-      border: 1px solid #e8e8e8;
-      border-radius: 8px;
-      font-size: 0.8rem;
-    }
-
-    .url-row-label {
-      font-size: 0.7rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #999;
-      margin-right: 0.5rem;
-    }
-
-    .mono { font-family: "SF Mono", "Fira Code", "Consolas", monospace; }
-    .text-sm { font-size: 0.78rem; }
-    .muted-text { color: #bbb; }
-
-    .nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-    }
-
-    .nav-left {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .nav-left a.back {
-      margin: 0;
-    }
-
-    .nav-links {
-      display: flex;
-      gap: 1.25rem;
-      align-items: center;
-    }
-
-    .nav-links a {
-      font-size: 0.78rem;
-      color: #888;
-      text-decoration: none;
-      transition: color 0.15s;
-    }
-
-    .nav-links a:hover { color: #1a1a1a; }
-
-    @media (max-width: 640px) {
-      body { padding: 1.5rem 1rem; }
-      .header { flex-direction: column; }
-      .actions { align-self: flex-start; }
-    }
-  </style>
-</head>
-<body>
-<div class="container">
-  <div class="nav">
-    <a href="/" class="back">&larr; Back to list</a>
-    <div class="nav-links">
-      <a href="/totp-setup">TOTP</a>
-      <a href="/logout">Logout</a>
-    </div>
-  </div>
-
-  <div class="header">
-    <div class="header-left">
-      <!-- Read mode title -->
-      <div id="title-read">
-        {% match paste.title %}
-          {% when Some with (t) %}
-            <h1>{{ t }}</h1>
-          {% when None %}
-            <h1 class="muted">Untitled</h1>
-        {% endmatch %}
-      </div>
-      <!-- Edit mode title -->
-      <div id="title-edit" class="hidden">
-        <input class="title-input" id="edit-title" type="text"
-               value="{{ paste.title.as_deref().unwrap_or("") }}"
-               placeholder="Title (optional)" />
-      </div>
-
-      <div class="meta">
-        <span class="meta-item">
-          <span class="mono text-sm">{{ paste.id }}</span>
-        </span>
-        <span class="meta-item">
-          <span class="badge badge-{{ paste.visibility }}">{{ paste.visibility }}</span>
-        </span>
-        <span class="meta-item">
-          <time datetime="{{ paste.created_at }}">{{ paste.created_at }}</time>
-        </span>
-        {% match paste.expires_at %}
-          {% when Some with (exp) %}
-            <span class="meta-item">
-              expires <time datetime="{{ exp }}">{{ exp }}</time>
-            </span>
-          {% when None %}
-        {% endmatch %}
-      </div>
-    </div>
-
-    <div class="actions">
-      <!-- Read mode buttons -->
-      <div id="actions-read">
-        <button class="btn btn-outline" id="edit-btn">Edit</button>
-      </div>
-      <!-- Edit mode buttons -->
-      <div id="actions-edit" class="hidden">
-        <button class="btn" id="save-btn">Save</button>
-        <button class="btn btn-outline" id="cancel-btn">Cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <span class="card-header-label">Content</span>
-      <button class="btn-icon copy-content-btn" title="Copy content">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-      </button>
-    </div>
-    <!-- Read mode -->
-    <div class="content-view" id="content-read">
-      <pre>{{ paste.content }}</pre>
-    </div>
-    <!-- Edit mode -->
-    <div class="content-edit hidden" id="content-edit">
-      <textarea id="edit-content">{{ paste.content }}</textarea>
-    </div>
-  </div>
-
-  <div class="url-row">
-    <span class="url-row-label">Raw</span>
-    <a href="{{ paste.raw_url }}" class="mono text-sm" target="_blank">{{ paste.raw_url }}</a>
-    <button class="btn-icon copy-url-btn" data-url="{{ paste.raw_url }}" title="Copy URL">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-    </button>
-  </div>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ paste.title.as_deref().unwrap_or("Untitled") }} · Pastebin</title>{% include "ui_styles.html" %}</head>
+<body><main class="shell" id="paste-page" data-id="{{ paste.id }}" data-timezone="{{ script_timezone }}">
+<header class="topbar"><a class="brand" href="/"><span class="brand-mark">/p</span>Pastebin</a><nav class="navlinks"><a href="/totp-setup">Security</a><a href="/logout">Sign out</a></nav></header>
+<a class="breadcrumb" href="/">← All pastes</a><div class="page-heading detail-heading"><div style="flex:1;min-width:0"><h1 class="detail-title" id="title-read">{% if paste.title.as_deref().unwrap_or("").is_empty() %}Untitled paste{% else %}{{ paste.title.as_deref().unwrap_or("") }}{% endif %}</h1>
+<div class="meta"><span class="mono">{{ paste.id }}</span><span class="badge badge-{{ paste.visibility }}">{{ paste.visibility }}</span><span class="badge" id="type-badge">{{ paste.kind }}</span><span id="execution-badge">{% if paste.kind == "javascript" %}{% if paste.scheduler.is_some() %}Scheduled cache{% else %}On request{% endif %}{% endif %}</span><span>Created <time datetime="{{ paste.created_at }}">{{ paste.created_at }}</time></span>{% match paste.expires_at %}{% when Some with (exp) %}<span>Expires <time datetime="{{ exp }}">{{ exp }}</time></span>{% when None %}{% endmatch %}</div></div>
+<div class="actions detail-actions"><span class="unsaved hidden" id="unsaved">Unsaved changes</span><button class="btn danger-text" id="delete-btn" type="button">Delete</button><button class="btn" id="edit-btn">Edit paste</button><button class="btn hidden" id="cancel-btn">Cancel</button><button class="btn btn-primary hidden" id="save-btn">Save changes</button></div></div>
+<div class="panel settings-panel hidden" id="edit-settings"><div class="form-grid"><div class="field"><label for="edit-title">Title</label><input id="edit-title" value="{{ paste.title.as_deref().unwrap_or("") }}" placeholder="Untitled paste" disabled></div><div class="field"><label for="edit-kind">Type</label><select id="edit-kind" disabled><option value="text" {% if paste.kind == "text" %}selected{% endif %}>Text</option><option value="javascript" {% if paste.kind == "javascript" %}selected{% endif %}>JavaScript</option></select></div></div>
+<section id="schedule-controls" class="schedule-box hidden">
+<div class="field-label">When should this script run?</div>
+<select id="execution-mode" hidden aria-label="Execution"><option value="always" {% if paste.scheduler.is_none() %}selected{% endif %}>On every request</option><option value="scheduled" {% if paste.scheduler.is_some() %}selected{% endif %}>On a schedule</option></select>
+<div class="execution-options" role="radiogroup" aria-label="When to run">
+<label class="execution-option"><input type="radio" name="execution-choice" value="always"><span><strong>Every request</strong><small>Run when someone opens the Raw URL. Return a fresh result.</small></span></label>
+<label class="execution-option"><input type="radio" name="execution-choice" value="scheduled"><span><strong>On a schedule</strong><small>Run automatically and save the result. The Raw URL reads the saved result.</small></span></label>
 </div>
+<div id="cron-fields" class="schedule-frequency">
+{% include "schedule_builder.html" %}
+<div class="field hidden" id="custom-cron"><label for="edit-scheduler">Cron expression</label><input id="edit-scheduler" name="scheduler" class="mono" value="{{ paste.scheduler.as_deref().unwrap_or("") }}" placeholder="*/5 * * * *" aria-describedby="cron-help"><span class="hint" id="cron-help">minute · hour · day · month · weekday. Example: 0 9 * * * = daily at 09:00.</span></div>
+<div class="schedule-summary"><p id="schedule-summary" aria-live="polite"></p><div class="schedule-expression"><span class="hint">Cron</span><code id="schedule-generated"></code><button type="button" class="btn btn-quiet btn-small" id="edit-cron">Edit Cron</button></div></div>
+</div><p id="execution-description" class="hint schedule-hint" aria-live="polite"></p></section></div>
 
-{% raw %}
-<script>
-(function() {
-  const pasteId = document.querySelector('.mono.text-sm').textContent.trim();
-
-  // Elements
-  const titleRead = document.getElementById('title-read');
-  const titleEdit = document.getElementById('title-edit');
-  const titleInput = document.getElementById('edit-title');
-  const contentRead = document.getElementById('content-read');
-  const contentEdit = document.getElementById('content-edit');
-  const contentTextarea = document.getElementById('edit-content');
-  const actionsRead = document.getElementById('actions-read');
-  const actionsEdit = document.getElementById('actions-edit');
-  const editBtn = document.getElementById('edit-btn');
-  const saveBtn = document.getElementById('save-btn');
-  const cancelBtn = document.getElementById('cancel-btn');
-
-  // State
-  let originalTitle = titleInput.value;
-  let originalContent = contentTextarea.value;
-
-  function enterEditMode() {
-    originalTitle = titleInput.value;
-    originalContent = contentTextarea.value;
-    titleRead.classList.add('hidden');
-    titleEdit.classList.remove('hidden');
-    contentRead.classList.add('hidden');
-    contentEdit.classList.remove('hidden');
-    actionsRead.classList.add('hidden');
-    actionsEdit.classList.remove('hidden');
-    contentTextarea.focus();
-  }
-
-  function exitEditMode() {
-    titleRead.classList.remove('hidden');
-    titleEdit.classList.add('hidden');
-    contentRead.classList.remove('hidden');
-    contentEdit.classList.add('hidden');
-    actionsRead.classList.remove('hidden');
-    actionsEdit.classList.add('hidden');
-  }
-
-  editBtn.addEventListener('click', enterEditMode);
-
-  cancelBtn.addEventListener('click', function() {
-    titleInput.value = originalTitle;
-    contentTextarea.value = originalContent;
-    exitEditMode();
-  });
-
-  saveBtn.addEventListener('click', async function() {
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
-
-    const body = {};
-    if (titleInput.value !== originalTitle) {
-      body.title = titleInput.value;
-    }
-    if (contentTextarea.value !== originalContent) {
-      body.content = contentTextarea.value;
-    }
-
-    if (Object.keys(body).length === 0) {
-      exitEditMode();
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save';
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/pastes/' + encodeURIComponent(pasteId), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        alert('Error: ' + text);
-        return;
-      }
-      // Update the read-mode view
-      const h1 = titleRead.querySelector('h1');
-      if (titleInput.value.trim()) {
-        h1.textContent = titleInput.value;
-        h1.className = '';
-      } else {
-        h1.textContent = 'Untitled';
-        h1.className = 'muted';
-      }
-      contentRead.querySelector('pre').textContent = contentTextarea.value;
-      exitEditMode();
-    } catch(err) {
-      alert('Network error');
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save';
-    }
-  });
-
-  // Copy content
-  document.querySelector('.copy-content-btn').addEventListener('click', function() {
-    const text = contentTextarea.value;
-    navigator.clipboard.writeText(text).then(() => {
-      this.classList.add('copy-ok');
-      setTimeout(() => this.classList.remove('copy-ok'), 1500);
-    });
-  });
-
-  // Copy URL
-  const copyUrlBtn = document.querySelector('.copy-url-btn');
-  if (copyUrlBtn) {
-    copyUrlBtn.addEventListener('click', function() {
-      navigator.clipboard.writeText(this.dataset.url).then(() => {
-        this.classList.add('copy-ok');
-        setTimeout(() => this.classList.remove('copy-ok'), 1500);
-      });
-    });
-  }
-
-  // Relative timestamps
-  document.querySelectorAll('time').forEach(el => {
-    const iso = el.getAttribute('datetime');
-    if (iso) {
-      el.title = iso;
-      el.textContent = relativeTime(iso);
-    }
-  });
-
-  function relativeTime(iso) {
-    const d = new Date(iso);
-    const now = Date.now();
-    const diff = now - d.getTime();
-    if (diff < 0) return 'in ' + humanDuration(-diff);
-    return humanDuration(diff) + ' ago';
-  }
-
-  function humanDuration(ms) {
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return s + 's';
-    const m = Math.floor(s / 60);
-    if (m < 60) return m + 'm';
-    const h = Math.floor(m / 60);
-    if (h < 24) return h + 'h';
-    const d = Math.floor(h / 24);
-    if (d < 30) return d + 'd';
-    const mo = Math.floor(d / 30);
-    return mo + 'mo';
-  }
+<div id="form-error" class="error-banner hidden" role="alert"></div>
+<div id="workspace" class="workspace"><section class="panel editor-panel"><div class="panel-head"><label class="panel-title" id="content-label" for="edit-content">Content</label><div class="actions"><button type="button" id="example-script" class="btn btn-small btn-quiet hidden" data-js-only disabled>Use example</button><button type="button" class="btn btn-small" id="copy-content">Copy source</button></div></div><textarea id="edit-content" class="editor" aria-label="Content" readonly spellcheck="false">{{ paste.content }}</textarea><div class="editor-footer"><span id="char-count"></span><span id="editor-hint">Read only · Edit paste to make changes</span></div></section>{% include "script_preview.html" %}</div>
+<section class="panel cache-panel {% if paste.scheduler.is_none() %}hidden{% endif %}" id="cache-panel"><div class="panel-head"><span class="panel-title">Scheduled cache <span class="badge mono" id="cron-badge">{{ paste.scheduler.as_deref().unwrap_or("") }}</span></span><div class="actions"><span class="hint">{{ script_timezone }}</span><button class="btn btn-quiet btn-small" id="refresh-cache">Refresh status</button></div></div><dl class="cache-grid"><div><dt>Last successful update</dt><dd id="cache-success">{{ paste.cache_updated_at.as_deref().unwrap_or("Awaiting first result") }}</dd></div><div><dt>Last attempt</dt><dd id="cache-attempt">{{ paste.last_run_at.as_deref().unwrap_or("Not run yet") }}</dd></div><div><dt>Next run</dt><dd id="cache-next">{{ paste.next_run_at.as_deref().unwrap_or("—") }}</dd></div></dl><div class="error-banner {% if paste.last_error.is_none() %}hidden{% endif %}" id="cache-error" style="margin:0 18px 12px">{{ paste.last_error.as_deref().unwrap_or("") }}</div><div class="cached-result"><div class="cached-result-heading"><div><h2>Current cached result</h2><p class="hint">The saved content currently served by the Raw URL.</p></div><button type="button" class="btn btn-small" id="copy-cache" {% if paste.cached_content.is_none() %}disabled{% endif %}>Copy result</button></div><pre id="cache-output" class="cached-output {% if paste.cached_content.is_none() %}hidden{% endif %}" tabindex="0" aria-label="Current cached result">{{ paste.cached_content.as_deref().unwrap_or("") }}</pre><p id="cache-empty" class="cache-empty {% if paste.cached_content.is_some() %}hidden{% endif %}">No cached result yet. It will appear after the first successful scheduled run.</p><p id="cache-empty-string" class="cache-empty {% if paste.cached_content.is_none() || !paste.cached_content.as_deref().unwrap_or("").is_empty() %}hidden{% endif %}">The cached result is an empty string.</p></div><div class="cache-foot" id="cache-note">Raw serves the last successful result. Preview does not change the cache.</div></section>
+<div class="panel raw-bar"><span class="panel-title">Raw URL</span><a class="raw-address" href="{{ paste.raw_url }}" target="_blank" rel="noopener noreferrer" title="{{ paste.raw_url }}">{{ paste.raw_url }}</a><button class="btn btn-small" data-copy="{{ paste.raw_url }}">Copy link</button><a class="btn btn-small" href="{{ paste.raw_url }}" target="_blank" rel="noopener noreferrer">Open ↗</a></div>
+<p class="footer-note hidden" data-js-only>Use <code class="inline-code">await fetch(url)</code> and <code class="inline-code">return "content"</code>. Preview sends real network requests.</p>
+</main>
+<dialog class="dialog dialog-small" id="delete-dialog" aria-labelledby="delete-title"><div class="dialog-header"><h2 id="delete-title">Delete this paste?</h2></div><div class="dialog-body"><p id="delete-description"></p><p class="hint" style="margin-top:10px">This permanently deletes the content and any cached result. Its Raw URL will stop working.</p><div class="error-banner hidden" id="delete-error" role="alert"></div></div><div class="dialog-footer"><button type="button" class="btn" id="keep-paste">Keep paste</button><button type="button" class="btn btn-danger" id="confirm-delete">Delete paste</button></div></dialog>
+{% include "ui_common.html" %}
+{% raw %}<script>
+(()=>{
+ const page=document.getElementById('paste-page'),id=page.dataset.id,tz=page.dataset.timezone;
+ const title=document.getElementById('edit-title'),code=document.getElementById('edit-content'),kind=document.getElementById('edit-kind'),mode=document.getElementById('execution-mode'),cron=document.getElementById('edit-scheduler');
+ let editing=false,saving=false,refreshing=false,deleting=false;let original={title:title.value,content:code.value,kind:kind.value,scheduler:cron.value};
+ const current=()=>({title:title.value,content:code.value,kind:kind.value,scheduler:kind.value==='javascript'&&mode.value==='scheduled'?cron.value.trim():''});
+ const dirty=()=>editing&&JSON.stringify(current())!==JSON.stringify(original);
+ function change(){document.getElementById('unsaved').classList.toggle('hidden',!dirty());}
+ [title,code,kind,mode,cron].forEach(el=>{el.addEventListener('input',change);el.addEventListener('change',change);});
+ function setEditing(value){editing=value;page.classList.toggle('is-editing',value);title.disabled=!value;document.getElementById('edit-settings').classList.toggle('hidden',!value);document.getElementById('edit-btn').classList.toggle('hidden',value);document.getElementById('cancel-btn').classList.toggle('hidden',!value);document.getElementById('save-btn').classList.toggle('hidden',!value);code.readOnly=!value;[kind,mode,cron,document.getElementById('example-script')].forEach(el=>el.disabled=!value);document.getElementById('editor-hint').textContent=value?'⌘ / Ctrl + S to save':'Read only · Edit paste to make changes';change();}
+ document.getElementById('edit-btn').onclick=()=>{setEditing(true);title.focus({preventScroll:true});};
+ document.getElementById('cancel-btn').onclick=()=>{if(saving)return;if(dirty()&&!confirm('Discard your unsaved changes?'))return;title.value=original.title;code.value=original.content;kind.value=original.kind;cron.value=original.scheduler;mode.value=original.scheduler?'scheduled':'always';setEditing(false);PasteUI.error('');document.dispatchEvent(new Event('paste-changed'));};
+ const deletion=document.getElementById('delete-dialog'),deleteButton=document.getElementById('delete-btn'),keepButton=document.getElementById('keep-paste');
+ deleteButton.onclick=()=>{if(saving||deleting)return;document.getElementById('delete-description').textContent=original.title||id;PasteUI.error('','delete-error');deletion.showModal();keepButton.focus();};
+ keepButton.onclick=()=>{if(!deleting)deletion.close();};
+ deletion.addEventListener('cancel',e=>{if(deleting)e.preventDefault();});
+ document.getElementById('confirm-delete').onclick=async function(){if(deleting)return;deleting=true;this.disabled=true;keepButton.disabled=true;this.textContent='Deleting…';
+  try{const res=await fetch('/api/pastes/'+encodeURIComponent(id),{method:'DELETE'});if(!res.ok)throw new Error(res.status===401?'Your session expired. Sign in again.':await res.text());editing=false;location.href='/';}
+  catch(error){PasteUI.error(error.message,'delete-error');deleting=false;this.disabled=false;keepButton.disabled=false;this.textContent='Delete paste';}
+ };
+ document.getElementById('copy-content').onclick=function(){PasteUI.copy(code.value,this);};
+ function localTime(iso,fallback){if(!iso)return fallback;return new Intl.DateTimeFormat(undefined,{timeZone:tz,month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(iso));}
+ const cacheOutput=document.getElementById('cache-output'),copyCache=document.getElementById('copy-cache');
+ copyCache.onclick=()=>PasteUI.copy(cacheOutput.textContent,copyCache);
+ function cacheStatus(data){
+  const hasCache=data.cached_content!==null && data.cached_content!==undefined;
+  cacheOutput.textContent=data.cached_content??'';cacheOutput.classList.toggle('hidden',!hasCache);
+  document.getElementById('cache-empty').classList.toggle('hidden',hasCache);
+  document.getElementById('cache-empty-string').classList.toggle('hidden',!hasCache||data.cached_content!=='');
+  copyCache.disabled=!hasCache;
+ document.getElementById('cache-panel').classList.toggle('hidden',!data.scheduler);document.getElementById('cron-badge').textContent=data.scheduler||'';document.getElementById('cache-success').textContent=localTime(data.cache_updated_at,'Awaiting first result');document.getElementById('cache-attempt').textContent=localTime(data.last_run_at,'Not run yet');document.getElementById('cache-next').textContent=localTime(data.next_run_at,'—');const error=document.getElementById('cache-error');error.textContent=data.last_error||'';error.classList.toggle('hidden',!data.last_error);document.getElementById('cache-note').textContent=data.last_error?(data.cache_updated_at?'Last run failed. Raw still serves the last successful result.':'No successful result yet. Raw will be available after a successful run.'):(data.cache_updated_at?'Cache ready · Status updates automatically. Preview does not change the cache.':'Waiting for the first successful run · Status updates automatically.');}
+ // Format server-rendered timestamps immediately in the schedule’s time zone.
+ for(const key of ['cache-success','cache-attempt','cache-next']){const el=document.getElementById(key);if(/^\d{4}-/.test(el.textContent))el.textContent=localTime(el.textContent,'—');}
+ async function refresh(manual=false){if(refreshing||saving||document.hidden)return;refreshing=true;const b=document.getElementById('refresh-cache');b.disabled=true;try{const res=await fetch('/api/pastes/'+encodeURIComponent(id));if(!res.ok)throw new Error(res.status===401?'Session expired. Reload to sign in.':'Could not refresh status.');cacheStatus(await res.json());if(manual)PasteUI.toast('Cache status updated');}catch(error){if(manual)PasteUI.toast(error.message);}finally{refreshing=false;b.disabled=false;}}
+ document.getElementById('refresh-cache').onclick=()=>refresh(true);setInterval(()=>{if(!document.getElementById('cache-panel').classList.contains('hidden'))refresh();},10000);
+ document.getElementById('save-btn').onclick=async function(){if(saving||!PasteUI.validateSchedule(kind,mode,cron))return;if(!code.value.trim()){PasteUI.error('Content cannot be empty.');code.focus();return;}if(!dirty()){setEditing(false);return;}saving=true;deleteButton.disabled=true;this.disabled=true;document.getElementById('cancel-btn').disabled=true;this.textContent='Saving…';PasteUI.error('');const snapshot=current();
+  try{const res=await fetch('/api/pastes/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(snapshot)});if(!res.ok)throw new Error(res.status===401?'Your session expired. Sign in again.':await res.text());original=snapshot;document.getElementById('title-read').textContent=snapshot.title||'Untitled paste';document.getElementById('type-badge').textContent=snapshot.kind;document.getElementById('execution-badge').textContent=snapshot.kind==='javascript'?(snapshot.scheduler?'Scheduled cache':'On request'):'';if(JSON.stringify(current())===JSON.stringify(snapshot))setEditing(false);else change();document.getElementById('cache-panel').classList.toggle('hidden',!snapshot.scheduler);PasteUI.toast('Changes saved');}
+  catch(error){PasteUI.error(error.message);}finally{saving=false;deleteButton.disabled=false;this.disabled=false;document.getElementById('cancel-btn').disabled=false;this.textContent='Save changes';await refresh();}
+ };
+ document.addEventListener('keydown',e=>{if(!deletion.open&&editing&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();document.getElementById('save-btn').click();}});
+ window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
+ if(new URLSearchParams(location.search).has('created')){PasteUI.toast('Paste created · Your Raw URL is ready below.');history.replaceState(null,'',location.pathname);}
 })();
-</script>
-{% endraw %}
-</body>
-</html>
+</script>{% endraw %}</body></html>

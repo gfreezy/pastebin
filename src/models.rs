@@ -8,6 +8,8 @@ use crate::error::AppError;
 
 pub struct AppState {
     pub db: SqlitePool,
+    pub scripts: crate::script::ScriptExecutor,
+    pub script_timezone: chrono_tz::Tz,
     pub admin_user: String,
     pub admin_pass: String,
     pub base_url: String,
@@ -43,6 +45,8 @@ impl Visibility {
 
 #[derive(Deserialize)]
 pub struct CreatePasteForm {
+    pub scheduler: Option<String>,
+    pub kind: Option<String>,
     pub id: Option<String>,
     pub content: String,
     pub title: Option<String>,
@@ -59,6 +63,8 @@ pub struct RawQuery {
 
 #[derive(Serialize)]
 pub struct PasteMeta {
+    pub scheduler: Option<String>,
+    pub kind: String,
     pub id: String,
     pub title: Option<String>,
     pub visibility: String,
@@ -70,6 +76,13 @@ pub struct PasteMeta {
 
 #[derive(Serialize)]
 pub struct PasteDetail {
+    pub cached_content: Option<String>,
+    pub cache_updated_at: Option<String>,
+    pub last_run_at: Option<String>,
+    pub last_error: Option<String>,
+    pub next_run_at: Option<String>,
+    pub scheduler: Option<String>,
+    pub kind: String,
     pub id: String,
     pub title: Option<String>,
     pub visibility: String,
@@ -82,6 +95,8 @@ pub struct PasteDetail {
 
 #[derive(Serialize)]
 pub struct CreatePasteResponse {
+    pub scheduler: Option<String>,
+    pub kind: String,
     pub id: String,
     pub visibility: String,
     pub created_at: String,
@@ -91,6 +106,8 @@ pub struct CreatePasteResponse {
 
 #[derive(Deserialize)]
 pub struct UpdatePasteForm {
+    pub scheduler: Option<String>,
+    pub kind: Option<String>,
     pub title: Option<String>,
     pub content: Option<String>,
 }
@@ -108,7 +125,10 @@ pub fn parse_visibility_string(value: String) -> Result<Visibility, AppError> {
     }
 }
 
-pub fn parse_expiry(expires_at: Option<&str>, expires_in: Option<i64>) -> Result<Option<i64>, AppError> {
+pub fn parse_expiry(
+    expires_at: Option<&str>,
+    expires_in: Option<i64>,
+) -> Result<Option<i64>, AppError> {
     if let Some(expires_at) = expires_at {
         let parsed = OffsetDateTime::parse(expires_at, &Rfc3339)
             .map_err(|_| AppError::BadRequest("expires_at must be RFC3339".into()))?;
@@ -136,7 +156,12 @@ pub fn format_ts(ts: i64) -> String {
         .unwrap_or_else(|| ts.to_string())
 }
 
-pub fn build_raw_url(base_url: &str, id: &str, visibility: Visibility, key: Option<&str>) -> String {
+pub fn build_raw_url(
+    base_url: &str,
+    id: &str,
+    visibility: Visibility,
+    key: Option<&str>,
+) -> String {
     let base = base_url.trim_end_matches('/');
     match visibility {
         Visibility::Public => format!("{base}/raw/{id}"),
@@ -145,5 +170,14 @@ pub fn build_raw_url(base_url: &str, id: &str, visibility: Visibility, key: Opti
             let key = urlencoding::encode(key);
             format!("{base}/raw/{id}?key={key}")
         }
+    }
+}
+
+/// Missing types preserve the original plain-text API behavior.
+pub fn parse_kind(value: Option<&str>) -> Result<&str, AppError> {
+    match value.unwrap_or("text") {
+        "text" => Ok("text"),
+        "javascript" => Ok("javascript"),
+        other => Err(AppError::BadRequest(format!("invalid kind: {other}"))),
     }
 }

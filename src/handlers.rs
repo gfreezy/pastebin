@@ -15,12 +15,14 @@ use crate::models::*;
 #[template(path = "index.html")]
 struct IndexTemplate {
     pastes: Vec<PasteMeta>,
+    script_timezone: String,
 }
 
 #[derive(Template)]
 #[template(path = "view.html")]
 struct ViewTemplate {
     paste: PasteDetail,
+    script_timezone: String,
 }
 
 pub async fn admin_index(
@@ -28,7 +30,10 @@ pub async fn admin_index(
 ) -> Result<impl IntoResponse, AppError> {
     purge_expired(&state.db).await?;
     let pastes = fetch_paste_meta(&state).await?;
-    Ok(IndexTemplate { pastes })
+    Ok(IndexTemplate {
+        pastes,
+        script_timezone: state.script_timezone.to_string(),
+    })
 }
 
 pub async fn list_pastes(
@@ -46,7 +51,7 @@ pub async fn get_paste(
     let now = now_ts();
     let row = sqlx::query(
         r#"
-        SELECT id, title, content, visibility, access_key, created_at, expires_at
+        SELECT id, title, kind, scheduler, cached_content, cache_updated_at, last_run_at, last_error, next_run_at, content, visibility, access_key, created_at, expires_at
         FROM pastes
         WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)
         "#,
@@ -65,6 +70,13 @@ pub async fn get_paste(
     let raw_url = build_raw_url(&state.base_url, &id, visibility, access_key.as_deref());
 
     let detail = PasteDetail {
+        kind: row.get("kind"),
+        scheduler: row.get("scheduler"),
+        cached_content: row.get("cached_content"),
+        cache_updated_at: row.get::<Option<i64>, _>("cache_updated_at").map(format_ts),
+        last_run_at: row.get::<Option<i64>, _>("last_run_at").map(format_ts),
+        last_error: row.get("last_error"),
+        next_run_at: row.get::<Option<i64>, _>("next_run_at").map(format_ts),
         id,
         title: row.get::<Option<String>, _>("title"),
         visibility: visibility.as_str().to_string(),
@@ -88,6 +100,14 @@ pub async fn create_paste(
         return Err(AppError::BadRequest("content is required".into()));
     }
 
+    let kind = parse_kind(form.kind.as_deref())?;
+    if kind == "javascript" && form.content.len() > crate::script::MAX_SOURCE {
+        return Err(AppError::BadRequest(
+            "JavaScript source exceeds 256 KiB".into(),
+        ));
+    }
+    let scheduler =
+        crate::scheduler::normalize(form.scheduler.as_deref(), kind, state.script_timezone)?;
     let visibility = parse_visibility(form.visibility)?;
     let expires_at = parse_expiry(form.expires_at.as_deref(), form.expires_in)?;
 
@@ -111,8 +131,8 @@ pub async fn create_paste(
 
     sqlx::query(
         r#"
-        INSERT INTO pastes (id, title, content, visibility, access_key, created_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pastes (id, title, content, visibility, access_key, created_at, expires_at, kind, scheduler, next_run_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -122,12 +142,17 @@ pub async fn create_paste(
     .bind(access_key.as_deref())
     .bind(created_at)
     .bind(expires_at)
+    .bind(kind)
+    .bind(scheduler.as_deref())
+    .bind(scheduler.as_ref().map(|_| created_at))
     .execute(&state.db)
     .await?;
 
     let raw_url = build_raw_url(&state.base_url, &id, visibility, access_key.as_deref());
 
     let response = CreatePasteResponse {
+        kind: kind.to_string(),
+        scheduler,
         id,
         visibility: visibility.as_str().to_string(),
         created_at: format_ts(created_at),
@@ -146,7 +171,7 @@ pub async fn raw_paste(
     let now = now_ts();
     let row = sqlx::query(
         r#"
-        SELECT content, visibility, access_key
+        SELECT content, kind, scheduler, cached_content, cache_updated_at, visibility, access_key
         FROM pastes
         WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)
         "#,
@@ -175,6 +200,50 @@ pub async fn raw_paste(
     }
 
     let content = row.get::<String, _>("content");
+    if row.get::<String, _>("kind") == "javascript" {
+        if row.get::<Option<String>, _>("scheduler").is_some() {
+            return Ok(match row.get::<Option<String>, _>("cached_content") {
+                Some(content) => (
+                    StatusCode::OK,
+                    [
+                        (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+                        (header::CACHE_CONTROL, "no-store"),
+                        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                    ],
+                    content,
+                )
+                    .into_response(),
+                None => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    [
+                        (header::CACHE_CONTROL, "no-store"),
+                        (header::RETRY_AFTER, "5"),
+                    ],
+                    "Scheduled result is not ready yet",
+                )
+                    .into_response(),
+            });
+        }
+        let result = state.scripts.execute(content).await;
+        return Ok(match result.error {
+            Some(_) => (
+                StatusCode::BAD_GATEWAY,
+                [(header::CACHE_CONTROL, "no-store")],
+                "Script execution failed; see administrator preview",
+            )
+                .into_response(),
+            None => (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+                    (header::CACHE_CONTROL, "no-store"),
+                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                ],
+                result.output.unwrap_or_default(),
+            )
+                .into_response(),
+        });
+    }
     Ok((
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
@@ -206,7 +275,7 @@ pub async fn view_paste(
     let now = now_ts();
     let row = sqlx::query(
         r#"
-        SELECT id, title, content, visibility, access_key, created_at, expires_at
+        SELECT id, title, kind, scheduler, cached_content, cache_updated_at, last_run_at, last_error, next_run_at, content, visibility, access_key, created_at, expires_at
         FROM pastes
         WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)
         "#,
@@ -225,6 +294,13 @@ pub async fn view_paste(
     let raw_url = build_raw_url(&state.base_url, &id, visibility, access_key.as_deref());
 
     let paste = PasteDetail {
+        kind: row.get("kind"),
+        scheduler: row.get("scheduler"),
+        cached_content: row.get("cached_content"),
+        cache_updated_at: row.get::<Option<i64>, _>("cache_updated_at").map(format_ts),
+        last_run_at: row.get::<Option<i64>, _>("last_run_at").map(format_ts),
+        last_error: row.get("last_error"),
+        next_run_at: row.get::<Option<i64>, _>("next_run_at").map(format_ts),
         id,
         title: row.get::<Option<String>, _>("title"),
         visibility: visibility.as_str().to_string(),
@@ -235,7 +311,10 @@ pub async fn view_paste(
         needs_key: visibility == Visibility::Private,
     };
 
-    Ok(ViewTemplate { paste })
+    Ok(ViewTemplate {
+        paste,
+        script_timezone: state.script_timezone.to_string(),
+    })
 }
 
 pub async fn update_paste(
@@ -245,17 +324,18 @@ pub async fn update_paste(
 ) -> Result<impl IntoResponse, AppError> {
     let now = now_ts();
     // Check paste exists and is not expired
+    let mut transaction = state.db.begin_with("BEGIN IMMEDIATE").await?;
     let row = sqlx::query(
-        "SELECT id FROM pastes WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)",
+        "SELECT id, kind, scheduler, content FROM pastes WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)",
     )
     .bind(&id)
     .bind(now)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *transaction)
     .await?;
 
-    if row.is_none() {
+    let Some(row) = row else {
         return Err(AppError::NotFound);
-    }
+    };
 
     if let Some(ref content) = form.content {
         if content.trim().is_empty() {
@@ -263,35 +343,64 @@ pub async fn update_paste(
         }
     }
 
-    // Build dynamic update
-    let title = form.title.as_deref();
-    let content = form.content.as_deref();
-
-    match (title, content) {
-        (Some(t), Some(c)) => {
-            sqlx::query("UPDATE pastes SET title = ?, content = ? WHERE id = ?")
-                .bind(t)
-                .bind(c)
-                .bind(&id)
-                .execute(&state.db)
-                .await?;
-        }
-        (Some(t), None) => {
-            sqlx::query("UPDATE pastes SET title = ? WHERE id = ?")
-                .bind(t)
-                .bind(&id)
-                .execute(&state.db)
-                .await?;
-        }
-        (None, Some(c)) => {
-            sqlx::query("UPDATE pastes SET content = ? WHERE id = ?")
-                .bind(c)
-                .bind(&id)
-                .execute(&state.db)
-                .await?;
-        }
-        (None, None) => {}
+    let old_kind: String = row.get("kind");
+    let old_scheduler: Option<String> = row.get("scheduler");
+    let kind = parse_kind(form.kind.as_deref().or(Some(old_kind.as_str())))?;
+    if kind == "javascript"
+        && form
+            .content
+            .as_deref()
+            .unwrap_or(&row.get::<String, _>("content"))
+            .len()
+            > crate::script::MAX_SOURCE
+    {
+        return Err(AppError::BadRequest(
+            "JavaScript source exceeds 256 KiB".into(),
+        ));
     }
-
+    let scheduler = if kind == "text" && form.scheduler.as_deref().unwrap_or("").trim().is_empty() {
+        None
+    } else {
+        crate::scheduler::normalize(
+            form.scheduler.as_deref().or(old_scheduler.as_deref()),
+            kind,
+            state.script_timezone,
+        )?
+    };
+    let changed = kind != old_kind
+        || scheduler != old_scheduler
+        || form
+            .content
+            .as_ref()
+            .is_some_and(|content| content != &row.get::<String, _>("content"));
+    sqlx::query("UPDATE pastes SET title = COALESCE(?, title), content = COALESCE(?, content), kind = ?, scheduler = ?,
+        revision = revision + ?, cached_content = CASE WHEN ? THEN NULL ELSE cached_content END,
+        cache_updated_at = CASE WHEN ? THEN NULL ELSE cache_updated_at END,
+        last_run_at = CASE WHEN ? THEN NULL ELSE last_run_at END,
+        last_error = CASE WHEN ? THEN NULL ELSE last_error END,
+        next_run_at = CASE WHEN ? THEN ? ELSE next_run_at END,
+        running_until = CASE WHEN ? THEN NULL ELSE running_until END,
+        run_token = CASE WHEN ? THEN NULL ELSE run_token END WHERE id = ?")
+        .bind(form.title.as_deref()).bind(form.content.as_deref()).bind(kind).bind(scheduler.as_deref())
+        .bind(i64::from(changed)).bind(changed).bind(changed).bind(changed).bind(changed)
+        .bind(changed).bind(scheduler.as_ref().map(|_| now))
+        .bind(changed).bind(changed).bind(&id)
+        .execute(&mut *transaction).await?;
+    transaction.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(serde::Deserialize)]
+pub struct PreviewForm {
+    content: String,
+}
+
+pub async fn preview_script(
+    State(state): State<Arc<AppState>>,
+    axum::Json(form): axum::Json<PreviewForm>,
+) -> impl IntoResponse {
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(state.scripts.execute(form.content).await),
+    )
 }

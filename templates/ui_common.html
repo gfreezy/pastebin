@@ -1,0 +1,16 @@
+<div id="notice" class="notice hidden" role="status" aria-live="polite"></div>
+{% raw %}
+<script>
+window.PasteUI = {
+  toast(message) { const el = document.getElementById('notice'); el.textContent = message; el.classList.remove('hidden'); clearTimeout(this.toastTimer); this.toastTimer = setTimeout(() => el.classList.add('hidden'), 3500); },
+  error(message, id = 'form-error') { const el = document.getElementById(id); el.textContent = message || ''; el.classList.toggle('hidden', !message); },
+  async copy(text, button) { try { await navigator.clipboard.writeText(text); const old = button.textContent; button.textContent = 'Copied'; setTimeout(() => button.textContent = old, 1600); } catch { this.toast('Could not copy. Select the text and copy it manually.'); } },
+  relative(iso) { const diff = Date.now() - new Date(iso).getTime(); const seconds = Math.abs(diff) / 1000; const [n,unit] = seconds < 60 ? [Math.floor(seconds),'s'] : seconds < 3600 ? [Math.floor(seconds/60),'m'] : seconds < 86400 ? [Math.floor(seconds/3600),'h'] : [Math.floor(seconds/86400),'d']; return diff < 0 ? `in ${n}${unit}` : `${n}${unit} ago`; },
+  times() { document.querySelectorAll('time[datetime]').forEach(el => { const iso = el.dateTime; if (!iso) return; el.title = new Date(iso).toLocaleString(); el.textContent = this.relative(iso); }); },
+  validateSchedule(kind, mode, input) { if(window.activeScheduleBuilder && !window.activeScheduleBuilder.validate()) return false; input.setCustomValidity(''); if(kind.value === 'javascript' && mode.value === 'scheduled' && input.value.trim().split(/\s+/).length !== 5) { input.setCustomValidity('Use five fields: minute hour day month weekday.'); input.reportValidity(); return false; } return true; }
+};
+document.addEventListener('click', e => { const button = e.target.closest('[data-copy]'); if(button) PasteUI.copy(button.dataset.copy, button); });
+PasteUI.times();
+setInterval(() => { if(!document.hidden) PasteUI.times(); }, 30000);
+</script>
+{% endraw %}

@@ -113,3 +113,119 @@ List pastes
 ```
 curl -H "X-User: admin" -H "X-Pass: secret" http://127.0.0.1:8080/api/pastes
 ```
+
+JavaScript content
+------------------
+Pastes support `kind=text` (the default, including existing records) and
+`kind=javascript`. JavaScript runs on the server using embedded `deno_runtime`
+(V8); no Deno CLI or Node installation is required. The Docker build includes the
+runtime in the application executable.
+
+In the create/edit page, select **JavaScript** and use **Run preview** to execute
+unsaved code. The result, console logs, errors, and elapsed time appear on the
+page. Preview makes real HTTP requests, including POST requests. Saving code does
+not require a successful preview.
+
+Scripts are async function bodies. Use `return` to produce a **string** (including
+an empty string), and `console.log/info/warn/error/debug` for separate preview
+logs. Use `JSON.stringify` for JSON output. JavaScript is supported directly;
+TypeScript, npm dependencies, module imports, browser DOM, and the `Deno`/Node
+system namespaces are not exposed.
+
+```js
+const response = await fetch("https://api.example.com/items", {
+  headers: { Accept: "application/json" }
+});
+if (!response.ok) throw new Error(`Upstream HTTP ${response.status}`);
+const data = await response.json();
+console.log("Items:", data.items.length);
+return data.items.map(item => item.url).join("\n");
+```
+
+### Execution modes
+
+- **Run on every Raw request**: omit `scheduler`, or set it to an empty string.
+  Each authorized `/raw/<id>` request executes the stored script and returns its
+  output. Execution failures return HTTP 502 without exposing script diagnostics.
+- **Schedule and cache**: set `scheduler` to a five-field Cron expression, such as
+  `*/5 * * * *` (every five minutes) or `0 9 * * *` (daily at 09:00). The fields are
+  minute, hour, day of month, month, and weekday. The server runs the script once
+  shortly after creation and then on schedule. Raw requests only read the most
+  recent successful result; they do not run the script.
+
+Cached content and execution status are stored in SQLite and survive restart.
+A failed scheduled execution preserves the last successful result. Before the
+first successful execution, Raw returns HTTP 503. The detail page shows the last
+attempt, last success, next scheduled time, and latest error; refresh it to see
+new status. Preview never writes the cache.
+
+Changing code, type, or schedule invalidates the old cache and queues an initial
+run when still scheduled. Changing only the title preserves it. In-flight results
+from an older revision are discarded. Expired/deleted pastes stop being scheduled.
+Missed occurrences during downtime are coalesced into one execution after startup;
+they are not replayed. A database lease prevents overlapping claims for the same
+revision; after a crash, a claimed run can be retried when its two-minute lease
+expires. External side effects are **not** guaranteed exactly once.
+
+| Environment | Default | Meaning |
+|---|---|---|
+| `PASTEBIN_JS_TIMEZONE` | `Asia/Shanghai` | IANA time zone used for all Cron schedules, e.g. `UTC` |
+| `PASTEBIN_JS_ALLOW_NET` | all public hosts | Optional comma-separated allowed hosts, optionally with ports, e.g. `api.example.com:443,example.org` |
+
+Private, loopback, link-local, and reserved network ranges are blocked, including
+literal IPs, redirect destinations, and DNS results. `PASTEBIN_JS_ALLOW_NET` narrows
+public access; it does not override the private-network restriction. Network
+requests originate from the server and are not subject to browser CORS.
+
+Limits per execution: 30 seconds total, 10 `fetch` calls, 10 seconds per fetch
+including its body, 5 MiB per response, 256 KiB source, 1 MiB output, and 64 KiB logs.
+Fetch responses are buffered under the size cap, so this is not a streaming Fetch
+implementation. At most two scripts execute concurrently. V8 uses a 64 MiB heap
+limit with interruption near the limit; this is not a cap on total process memory.
+Only administrators should author scripts: embedded isolates share the server
+process and do not provide OS-level fault isolation.
+
+### API examples
+
+Create a JavaScript paste that runs on each Raw request:
+
+```sh
+curl -H 'X-User: admin' -H 'X-Pass: secret' \
+  --data-urlencode 'kind=javascript' \
+  --data-urlencode 'content=return new Date().toISOString();' \
+  http://127.0.0.1:8080/api/pastes
+```
+
+Create a scheduled JavaScript paste:
+
+```sh
+curl -H 'X-User: admin' -H 'X-Pass: secret' \
+  --data-urlencode 'kind=javascript' \
+  --data-urlencode 'scheduler=*/5 * * * *' \
+  --data-urlencode 'content=return new Date().toISOString();' \
+  http://127.0.0.1:8080/api/pastes
+```
+
+Preview without saving:
+
+```sh
+curl -H 'X-User: admin' -H 'X-Pass: secret' -H 'Content-Type: application/json' \
+  -d '{"content":"console.log(\"hello\"); return \"result\";"}' \
+  http://127.0.0.1:8080/api/script-preview
+```
+
+Preview returns `{output, logs, error, duration_ms}`. Script errors are reported
+in `error`; authentication/request errors use HTTP status codes. `PUT
+/api/pastes/<id>` accepts `kind` and `scheduler` alongside `title` and `content`.
+Omitted update fields are preserved; `"scheduler":""` switches to per-request
+execution. Detail responses include `scheduler`, `last_run_at`, `last_error`,
+`cache_updated_at`, and `next_run_at`; timestamps are RFC 3339 UTC.
+
+### Building the embedded runtime
+
+Use Rust 1.98 or newer and the committed `Cargo.lock` (`cargo build --locked`).
+Deno, V8, SQLx, and ICU versions are selected together: both Deno and SQLx link
+SQLite, and this V8 release depends on ICU 2.1 unstable APIs. Update these
+constraints as a set. The first build downloads V8's prebuilt archive and is
+substantially larger than the plain-text-only application. Linux builds need
+Clang/libclang, CMake, Python 3, and a C/C++ toolchain; the Dockerfile installs them.

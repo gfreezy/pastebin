@@ -1,0 +1,94 @@
+{% raw %}
+<script>
+window.ScheduleBuilder = {
+  parse(expression) {
+    const parts = expression.trim().split(/\s+/);
+    if (parts.length !== 5) return { type: 'custom' };
+    const [m,h,d,month,w] = parts;
+    const integer = (v,max,min=0) => /^\d+$/.test(v) && Number(v)>=min && Number(v)<=max;
+    if (d==='*' && month==='*' && w==='*') {
+      if (h==='*' && (m==='*' || /^\*\/[1-9]\d*$/.test(m)) && (m==='*'||Number(m.slice(2))<60))
+        return {type:'minutes',interval:m==='*'?1:Number(m.slice(2))};
+      if (integer(m,59) && (h==='*' || /^\*\/[1-9]\d*$/.test(h)) && (h==='*'||Number(h.slice(2))<24))
+        return {type:'hours',interval:h==='*'?1:Number(h.slice(2)),minute:Number(m)};
+    }
+    if (month==='*' && integer(m,59) && integer(h,23)) {
+      const time=`${h.padStart(2,'0')}:${m.padStart(2,'0')}`;
+      if (d==='*' && w==='*') return {type:'daily',time};
+      if (d==='*' && ['0','1','2','3','4','5','6','1-5','0,6'].includes(w)) return {type:'weekly',time,weekday:w};
+      if (integer(d,31,1) && w==='*') return {type:'monthly',time,monthday:Number(d)};
+    }
+    return {type:'custom'};
+  },
+  build(config) {
+    const n=Number(config.interval),minute=Number(config.minute),day=Number(config.monthday);
+    const valid=(value,min,max)=>Number.isInteger(value)&&value>=min&&value<=max;
+    if(config.type==='minutes') return valid(n,1,59)?`${n===1?'*':'*/'+n} * * * *`:null;
+    if(config.type==='hours') return valid(n,1,23)&&config.minute!==''&&valid(minute,0,59)?`${minute} ${n===1?'*':'*/'+n} * * *`:null;
+    if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(config.time)) return null;
+    const [h,m]=config.time.split(':').map(Number);
+    if(config.type==='daily') return `${m} ${h} * * *`;
+    if(config.type==='weekly'&&['0','1','2','3','4','5','6','1-5','0,6'].includes(config.weekday)) return `${m} ${h} * * ${config.weekday}`;
+    if(config.type==='monthly'&&valid(day,1,31)) return `${m} ${h} ${day} * *`;
+    return null;
+  },
+  init(scheduler,mode,kind) {
+    const byId=id=>document.getElementById(id),type=byId('schedule-frequency');
+    const inputs={interval:byId('schedule-interval'),minute:byId('schedule-minute'),time:byId('schedule-time'),weekday:byId('schedule-weekday'),monthday:byId('schedule-monthday')};
+    const fields={interval:'interval-field',minute:'minute-field',time:'time-field',weekday:'weekday-field',monthday:'monthday-field'};
+    const summary=byId('schedule-summary'),generated=byId('schedule-generated'),quick=byId('schedule-quick');
+    const active=()=>kind.value==='javascript'&&mode.value==='scheduled';
+    const config=()=>Object.fromEntries([['type',type.value],...Object.entries(inputs).map(([key,input])=>[key,input.value])]);
+    function layout() {
+      const t=type.value;
+      const visible={interval:t==='minutes'||t==='hours',minute:t==='hours',time:['daily','weekly','monthly'].includes(t),weekday:t==='weekly',monthday:t==='monthly'};
+      for(const [key,id] of Object.entries(fields)) {byId(id).classList.toggle('hidden',!visible[key]);inputs[key].disabled=!visible[key]||!active();}
+      type.disabled=!active();
+      inputs.interval.max=t==='hours'?'23':'59';
+      byId('interval-unit').textContent=t==='hours'?'hours':'minutes';
+      byId('custom-cron').classList.toggle('hidden',t!=='custom');
+      byId('edit-cron').classList.toggle('hidden',t==='custom');
+      quick.replaceChildren();
+      const options=t==='minutes'?[1,5,10,15,20,30]:t==='hours'?[1,2,3,4,6,8,12]:[];
+      quick.classList.toggle('hidden',!options.length);
+      if(options.length) {
+        const label=document.createElement('span');label.className='hint';label.textContent='Quick pick';quick.append(label);
+        for(const n of options) {const button=document.createElement('button');button.type='button';button.className='btn btn-small';button.textContent=`${n} ${t==='hours'?'hr':'min'}`;button.setAttribute('aria-pressed',String(Number(inputs.interval.value)===n));button.onclick=()=>{inputs.interval.value=n;update();};quick.append(button);}
+      }
+    }
+    function describe() {
+      generated.textContent=scheduler.value.trim()||'—';
+      if(type.value==='custom') {summary.textContent='Custom Cron schedule. Times use the time zone shown above.';return;}
+      const c=config(),n=Number(c.interval);
+      if(!ScheduleBuilder.build(c)) {summary.textContent='Enter valid values to complete the schedule.';return;}
+      if(c.type==='minutes') summary.textContent=60%n===0?`Every ${n} ${n===1?'minute':'minutes'}, starting at minute 0 of each hour.`:`At minutes ${Array.from({length:Math.ceil(60/n)},(_,i)=>i*n).join(', ')} of each hour. Cron restarts the interval each hour.`;
+      if(c.type==='hours') summary.textContent=24%n===0?`Every ${n} ${n===1?'hour':'hours'}, at minute ${c.minute}, starting at midnight.`:`At hours ${Array.from({length:Math.ceil(24/n)},(_,i)=>i*n).join(', ')}, minute ${c.minute}. Cron restarts the interval each day.`;
+      if(c.type==='daily') summary.textContent=`Every day at ${c.time}.`;
+      if(c.type==='weekly') summary.textContent=`${inputs.weekday.selectedOptions[0].textContent} at ${c.time}.`;
+      if(c.type==='monthly') summary.textContent=`Day ${c.monthday} of each month at ${c.time}.${Number(c.monthday)>28?' Months without this day are skipped.':''}`;
+    }
+    function update() {
+      layout();
+      if(type.value!=='custom') scheduler.value=ScheduleBuilder.build(config())??'';
+      scheduler.setCustomValidity('');describe();scheduler.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+    function sync() {
+      const c=ScheduleBuilder.parse(scheduler.value||'*/5 * * * *');type.value=c.type;
+      for(const [key,input] of Object.entries(inputs)) if(c[key]!==undefined) input.value=c[key];
+      layout();describe();
+    }
+    type.addEventListener('change',()=>{if(type.value==='hours'&&Number(inputs.interval.value)>23)inputs.interval.value=1;update();});
+    for(const input of Object.values(inputs)) input.addEventListener('input',update);
+    scheduler.addEventListener('input',()=>{scheduler.setCustomValidity('');describe();});
+    byId('edit-cron').onclick=()=>{type.value='custom';layout();describe();scheduler.focus();};
+    const api={sync,visibility:()=>{layout();describe();},validate:()=>{
+      if(!active())return true;
+      for(const input of Object.values(inputs)) if(!input.disabled&&!input.reportValidity())return false;
+      if(scheduler.value.trim().split(/\s+/).length!==5) {type.value='custom';layout();scheduler.setCustomValidity('Use five fields: minute hour day month weekday.');scheduler.reportValidity();return false;}
+      return true;
+    }};
+    window.activeScheduleBuilder=api;return api;
+  }
+};
+</script>
+{% endraw %}

@@ -1,11 +1,13 @@
-FROM rust:1.94 AS builder
+FROM rust:1.98-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends clang libclang-dev cmake python3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY templates ./templates
 
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 

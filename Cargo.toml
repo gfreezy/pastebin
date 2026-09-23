@@ -8,11 +8,24 @@ askama = "0.12"
 askama_axum = "0.4"
 axum = "0.7"
 dotenvy = "0.15"
+deno_runtime = { version = "=0.248.0", features = ["transpile"] }
+deno_resolver = "=0.71.0"
+deno_core = "=0.393.0"
+hyper-util = { version = "0.1", features = ["client-legacy"] }
+ipnet = "2"
+# temporal_rs in this V8 release uses ICU 2.1 unstable APIs.
+icu_calendar = "=2.1.1"
+icu_normalizer = "=2.1.1"
+icu_properties = "=2.1.2"
+chrono = "0.4"
+chrono-tz = "0.10"
+croner = "3"
+sys_traits = { version = "=0.1.25", features = ["real"] }
 nanoid = "0.4"
 qrcode = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite"] }
 totp-rs = { version = "5", features = ["qr", "gen_secret"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
@@ -20,3 +33,6 @@ tower-http = { version = "0.5", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 urlencoding = "2.1"
+
+[profile.dev]
+debug = 0
