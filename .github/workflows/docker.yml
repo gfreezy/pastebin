@@ -47,3 +47,67 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: pastebin-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Redeploy with Swarmlite
+        env:
+          SWARMLITE_DEPLOY_TOKEN: ${{ secrets.SWARMLITE_DEPLOY_TOKEN }}
+          SWARMLITE_DEPLOY_URL: ${{ vars.SWARMLITE_DEPLOY_URL }}
+        run: |
+          set -euo pipefail
+
+          request_body=$(jq -cn \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            '{source:{repository:$repository,sha:$sha,run_id:$run_id}}')
+          response_file="$RUNNER_TEMP/swarmlite-deploy.json"
+          http_status=$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SWARMLITE_DEPLOY_TOKEN" \
+            --header "Idempotency-Key: github:$GITHUB_REPOSITORY:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT" \
+            --header 'Content-Type: application/json' \
+            --data "$request_body" \
+            "$SWARMLITE_DEPLOY_URL")
+
+          if [[ "$http_status" != "202" ]]; then
+            cat "$response_file"
+            echo "Expected HTTP 202, received $http_status" >&2
+            exit 1
+          fi
+
+          operation_id=$(jq -er '.operation_id' "$response_file")
+          revision=$(jq -er '.revision' "$response_file")
+          operation_url="${SWARMLITE_DEPLOY_URL%%/v1/deploy/services/*}/v1/deploy/operations/$operation_id"
+
+          for _ in $(seq 1 30); do
+            operation=$(curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $SWARMLITE_DEPLOY_TOKEN" \
+              "$operation_url?after_revision=$revision&wait_seconds=25")
+            status=$(jq -r '.status' <<<"$operation")
+            phase=$(jq -r '.phase' <<<"$operation")
+            revision=$(jq -r '.revision' <<<"$operation")
+            echo "Swarmlite deployment: status=$status phase=$phase"
+
+            if [[ "$status" == "succeeded" ]]; then
+              exit 0
+            fi
+            if [[ "$status" == "failed" ]] || [[ $(jq -r '.stalled // false' <<<"$operation") == "true" ]] || [[ $(jq -r '.blocked // false' <<<"$operation") == "true" ]]; then
+              jq . <<<"$operation"
+              exit 1
+            fi
+          done
+
+          echo "Timed out waiting for Swarmlite deployment" >&2
+          exit 1
