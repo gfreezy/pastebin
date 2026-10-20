@@ -72,6 +72,11 @@ jobs:
             '{source:{repository:$repository,sha:$sha,run_id:$run_id}}')
           response_file="$RUNNER_TEMP/swarmlite-deploy.json"
           http_status=$(curl --silent --show-error \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 10 \
+            --max-time 60 \
             --output "$response_file" \
             --write-out '%{http_code}' \
             --request POST \
@@ -93,6 +98,11 @@ jobs:
 
           for _ in $(seq 1 30); do
             operation=$(curl --fail-with-body --silent --show-error \
+              --retry 5 \
+              --retry-all-errors \
+              --retry-delay 2 \
+              --connect-timeout 10 \
+              --max-time 60 \
               --header "Authorization: Bearer $SWARMLITE_DEPLOY_TOKEN" \
               "$operation_url?after_revision=$revision&wait_seconds=25")
             status=$(jq -r '.status' <<<"$operation")
