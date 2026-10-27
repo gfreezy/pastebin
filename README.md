@@ -286,3 +286,66 @@ SQLite, and this V8 release depends on ICU 2.1 unstable APIs. Update these
 constraints as a set. The first build downloads V8's prebuilt archive and is
 substantially larger than the plain-text-only application. Linux builds need
 Clang/libclang, CMake, Python 3, and a C/C++ toolchain; the Dockerfile installs them.
+
+Standalone JavaScript runner
+----------------------------
+`pastebin-js` runs the same JavaScript ESM scripts as the web application without
+starting the HTTP server, opening a database, or requiring admin credentials.
+It embeds Deno/V8; no Node.js or Deno CLI installation is needed.
+
+```js
+// hello.js
+export default async function () {
+  console.log("Generating content");
+  return JSON.stringify({ message: "hello", time: new Date().toISOString() });
+}
+```
+
+```sh
+# Build locally (cargo run without --bin still starts the web application).
+cargo build --release --locked --bin pastebin-js
+
+./target/release/pastebin-js hello.js
+./target/release/pastebin-js hello.js > result.json
+cat hello.js | ./target/release/pastebin-js -
+./target/release/pastebin-js --json hello.js
+# Allow a proxy Fake-IP range for this invocation only.
+./target/release/pastebin-js --allow-cidr 198.18.0.0/15 hello.js
+```
+
+The default mode writes the returned string to stdout without an extra newline;
+supported console logs and errors go to stderr. `--json` writes the complete
+`{output, logs, error, duration_ms}` result to stdout. Exit status is 0 for success,
+1 for a script execution failure, and 2 for invalid arguments, unreadable/non-UTF-8
+input, oversized source, or configuration/output I/O errors. Use `--help` for
+options and `--` before a filename beginning with `-`.
+
+`--allow-cidr CIDR` adds an exception to the blocked address ranges for this CLI
+invocation. Repeat the option to allow multiple IPv4 or IPv6 ranges. It applies
+to module imports, default fetch, and custom HTTP clients, including DNS results
+and literal IPs. No exceptions are enabled by default. Host restrictions set
+by `PASTEBIN_JS_ALLOW_NET` still apply.
+
+HTTPS ESM dependencies, `fetch`, `PASTEBIN_JS_ALLOW_NET`, output limits, and the
+30-second execution deadline behave as documented above. This runner executes
+once per invocation: Cron scheduling and persistent result caching remain web
+application features. Dependency source caching lasts only for the CLI process.
+Relative local file imports, npm resolution, TypeScript, filesystem/system APIs,
+are not enabled. Private-network access requires an explicit `--allow-cidr`
+exception. It does not automatically load `.env`;
+set configuration variables in the invoking environment.
+
+### CI downloads
+
+The **Build JavaScript Runner** workflow builds and smoke-tests release binaries
+on pushes to `main`, `v*` tags, pull requests to `main`, and manual dispatches.
+Download these artifacts from the workflow run's **Artifacts** section:
+
+- `pastebin-js-x86_64-unknown-linux-gnu` — Linux x86_64, built on Ubuntu 22.04
+  (requires compatible glibc/system libraries; not a fully static musl binary).
+- `pastebin-js-aarch64-apple-darwin` — macOS Apple Silicon, built on macOS 14.
+
+Each artifact contains a `.tar.gz` archive (preserving executable permissions)
+and `SHA256SUMS`. Extract it and run `./pastebin-js hello.js`. macOS builds are
+unsigned and not notarized. The workflow uploads CI artifacts for 30 days; it
+does not publish GitHub Releases or deploy the web application.

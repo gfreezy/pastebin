@@ -82,6 +82,7 @@ pub(super) struct HttpsModuleLoader {
     client: reqwest::Client,
     permissions: PermissionsContainer,
     public_only: bool,
+    resolver: super::PublicResolver,
     cache: ModuleCache,
     budget: Rc<Budget>,
 }
@@ -91,6 +92,7 @@ impl HttpsModuleLoader {
         permissions: PermissionsContainer,
         public_only: bool,
         cache: ModuleCache,
+        resolver: super::PublicResolver,
     ) -> Result<Self, Error> {
         let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -99,12 +101,13 @@ impl HttpsModuleLoader {
             .timeout(Duration::from_secs(10))
             .user_agent("Pastebin-ESM/1");
         if public_only {
-            builder = builder.dns_resolver(Arc::new(super::PublicResolver));
+            builder = builder.dns_resolver(Arc::new(resolver.clone()));
         }
         Ok(Self {
             client: builder.build().map_err(|e| Error::generic(e.to_string()))?,
             permissions,
             public_only,
+            resolver,
             cache,
             budget: Rc::new(Budget::default()),
         })
@@ -128,7 +131,7 @@ impl HttpsModuleLoader {
         if self.public_only {
             if let Some(host) = url.host_str() {
                 if let Ok(ip) = host.trim_matches(['[', ']']).parse() {
-                    if !super::public_ip(ip) {
+                    if !self.resolver.allows(ip) {
                         return Err(Error::type_error(
                             "Private and reserved module addresses are not allowed",
                         ));
@@ -293,9 +296,10 @@ impl ModuleLoader for HttpsModuleLoader {
 impl reqwest::dns::Resolve for super::PublicResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let name = name.as_str().to_owned();
+        let resolver = self.clone();
         Box::pin(async move {
             let addresses: Vec<_> = tokio::net::lookup_host((name.as_str(), 0)).await?.collect();
-            if addresses.is_empty() || addresses.iter().any(|addr| !super::public_ip(addr.ip())) {
+            if addresses.is_empty() || addresses.iter().any(|addr| !resolver.allows(addr.ip())) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "Private and reserved module addresses are not allowed",

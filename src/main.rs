@@ -4,7 +4,7 @@ mod error;
 mod handlers;
 mod models;
 mod scheduler;
-mod script;
+use pastebin::script;
 
 use axum::{
     Router, middleware,

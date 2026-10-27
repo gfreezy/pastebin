@@ -1,0 +1,70 @@
+name: Build JavaScript Runner
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev cmake python3 pkg-config
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          rustup default 1.98.0
+          rustup target add ${{ matrix.target }}
+      - name: Build runner
+        run: cargo build --release --locked --bin pastebin-js --target ${{ matrix.target }}
+      - name: Smoke test packaged executable
+        shell: bash
+        env:
+          RUNNER_BIN: target/${{ matrix.target }}/release/pastebin-js
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          binary = os.environ['RUNNER_BIN']
+          p = subprocess.run([binary, 'tests/fixtures/runner.js'], capture_output=True, text=True)
+          assert p.returncode == 0, p.stderr
+          assert p.stdout == 'runner result', p.stdout
+          assert '[log] runner log' in p.stderr, p.stderr
+          p = subprocess.run([binary, '--json', '-'], input='export default () => { throw new Error("smoke failure"); }', capture_output=True, text=True)
+          assert p.returncode == 1, p.stderr
+          assert 'smoke failure' in json.loads(p.stdout)['error'], p.stdout
+          PY
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          tar -czf dist/pastebin-js-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release pastebin-js
+          cd dist
+          shasum -a 256 ./*.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pastebin-js-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30

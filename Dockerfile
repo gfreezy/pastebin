@@ -7,7 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY templates ./templates
 
-RUN cargo build --release --locked
+RUN cargo build --release --locked --bin pastebin
 
 FROM debian:bookworm-slim
 

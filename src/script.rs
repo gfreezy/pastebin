@@ -14,6 +14,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Semaphore;
+#[cfg(test)]
+mod http_client_tests;
 mod modules;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -51,6 +53,7 @@ pub struct ScriptExecutor {
     permissions: PermissionsContainer,
     timeout: Duration,
     public_only: bool,
+    resolver: PublicResolver,
     module_cache: modules::ModuleCache,
 }
 
@@ -75,6 +78,13 @@ impl ScriptResult {
 
 impl ScriptExecutor {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        Self::from_env_with_allowed_cidrs(&[])
+    }
+
+    /// Additional address ranges permitted for this executor; host restrictions still apply.
+    pub fn from_env_with_allowed_cidrs(
+        cidrs: &[String],
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let allow_net = match std::env::var("PASTEBIN_JS_ALLOW_NET") {
             Ok(value) => {
                 let hosts: Vec<String> = value
@@ -91,14 +101,33 @@ impl ScriptExecutor {
             Err(std::env::VarError::NotPresent) => vec![],
             Err(error) => return Err(error.into()),
         };
-        Self::new(allow_net, true, TIMEOUT)
+        let cidrs = cidrs
+            .iter()
+            .map(|value| {
+                value
+                    .parse::<ipnet::IpNet>()
+                    .map_err(|error| format!("Invalid allowed CIDR {value}: {error}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::with_cidrs(allow_net, true, TIMEOUT, &cidrs)
     }
 
+    #[cfg(test)]
     fn new(
         allow_net: Vec<String>,
         public_only: bool,
         timeout: Duration,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_cidrs(allow_net, public_only, timeout, &[])
+    }
+
+    fn with_cidrs(
+        allow_net: Vec<String>,
+        public_only: bool,
+        timeout: Duration,
+        cidrs: &[ipnet::IpNet],
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let resolver = PublicResolver::new(cidrs);
         // Initialize V8 once, before execution can occur concurrently.
         JsRuntime::init_platform(None);
         let _ =
@@ -125,9 +154,12 @@ impl ScriptExecutor {
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
                 Some(
-                    BLOCKED_NETS
+                    resolver
+                        .0
                         .iter()
-                        .map(|range| NetDescriptor(Host::IpSubnet(range.parse().unwrap()), None))
+                        .map(|range| {
+                            NetDescriptor(Host::IpSubnet(range.to_string().parse().unwrap()), None)
+                        })
                         .collect(),
                 ),
                 false,
@@ -138,6 +170,7 @@ impl ScriptExecutor {
             permissions: PermissionsContainer::new(parser, permissions),
             timeout,
             public_only,
+            resolver,
             module_cache: Default::default(),
         })
     }
@@ -204,6 +237,7 @@ impl ScriptExecutor {
             self.permissions.deep_clone(),
             self.public_only,
             self.module_cache.clone(),
+            self.resolver.clone(),
         ) {
             Ok(loader) => loader,
             Err(error) => return ScriptResult::error(error.to_string()),
@@ -224,7 +258,7 @@ impl ScriptExecutor {
             permissions: self.permissions.deep_clone(),
             root_cert_store_provider: None,
             fetch_dns_resolver: if self.public_only {
-                deno_runtime::deno_fetch::dns::Resolver::Custom(Arc::new(PublicResolver))
+                deno_runtime::deno_fetch::dns::Resolver::Custom(Arc::new(self.resolver.clone()))
             } else {
                 Default::default()
             },
@@ -242,6 +276,11 @@ impl ScriptExecutor {
                 ..Default::default()
             },
         );
+        worker
+            .js_runtime
+            .op_state()
+            .borrow_mut()
+            .put(ClientNetworkPolicy(self.public_only, self.resolver.clone()));
         let handle = worker.js_runtime.v8_isolate().thread_safe_handle();
         let memory_handle = handle.clone();
         worker
@@ -358,15 +397,111 @@ fn op_paste_log(state: &mut OpState, #[string] message: String) {
     logs.bytes += end + 1;
 }
 
-deno_core::extension!(paste_console, ops = [op_paste_log], esm_entry_point = "ext:paste_console/script_ops.js", esm = [dir "src", "script_ops.js"], state = |state| { state.put(Logs::default()); state.put(deno_runtime::ops::bootstrap::SnapshotOptions::default()); });
+// Custom clients must use the same DNS policy as the default fetch client.
+struct ClientNetworkPolicy(bool, PublicResolver);
 
-#[derive(Debug)]
-struct PublicResolver;
+#[op2]
+#[smi]
+fn op_paste_http_client(
+    state: &mut OpState,
+    #[serde] ca_certs: Vec<String>,
+    #[cppgc] keys: &deno_runtime::deno_tls::TlsKeysHolder,
+    http1: bool,
+    http2: bool,
+) -> Result<u32, deno_core::error::ModuleLoaderError> {
+    use deno_core::error::ModuleLoaderError as Error;
+    use deno_runtime::deno_fetch::{
+        CreateHttpClientOptions, HttpClientResource, create_http_client,
+    };
+    // Deno's client builder implicitly reads proxy environment variables. A proxy
+    // could resolve the destination itself and bypass our public-address policy.
+    if [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+    {
+        return Err(Error::generic(
+            "Custom HTTP clients require proxy environment variables to be unset",
+        ));
+    }
+    for cert in &ca_certs {
+        deno_runtime::deno_tls::load_certs(&mut cert.as_bytes())
+            .map_err(|error| Error::generic(error.to_string()))?;
+    }
+    let public_only = state.borrow::<ClientNetworkPolicy>().0;
+    let resolver = state.borrow::<ClientNetworkPolicy>().1.clone();
+    let client = create_http_client(
+        "pastebin",
+        CreateHttpClientOptions {
+            ca_certs: ca_certs.into_iter().map(String::into_bytes).collect(),
+            http1,
+            http2,
+            client_cert_chain_and_key: keys
+                .take()
+                .try_into()
+                .map_err(|_| Error::generic("Only PEM client certificates are supported"))?,
+            dns_resolver: if public_only {
+                deno_runtime::deno_fetch::dns::Resolver::Custom(Arc::new(resolver))
+            } else {
+                Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .map_err(|error| Error::generic(error.to_string()))?;
+    Ok(state.resource_table.add(HttpClientResource {
+        client,
+        allow_host: false,
+    }))
+}
 
+deno_core::extension!(paste_console, ops = [op_paste_log, op_paste_http_client], esm_entry_point = "ext:paste_console/script_ops.js", esm = [dir "src", "script_ops.js"], state = |state| { state.put(Logs::default()); state.put(deno_runtime::ops::bootstrap::SnapshotOptions::default()); });
+
+#[derive(Clone, Debug)]
+struct PublicResolver(Arc<Vec<ipnet::IpNet>>);
+
+impl PublicResolver {
+    fn new(allowed: &[ipnet::IpNet]) -> Self {
+        // Subtract exceptions from the deny list so Deno literal-IP permissions
+        // and both DNS resolvers enforce exactly the same ranges.
+        fn subtract(net: ipnet::IpNet, allowed: ipnet::IpNet, result: &mut Vec<ipnet::IpNet>) {
+            if allowed.contains(&net) {
+                return;
+            }
+            if !net.contains(&allowed) {
+                result.push(net);
+                return;
+            }
+            for child in net.subnets(net.prefix_len() + 1).unwrap() {
+                subtract(child, allowed, result);
+            }
+        }
+        let mut blocked: Vec<ipnet::IpNet> =
+            BLOCKED_NETS.iter().map(|s| s.parse().unwrap()).collect();
+        for allowed in allowed {
+            let mut remaining = Vec::new();
+            for net in blocked {
+                subtract(net, allowed.trunc(), &mut remaining);
+            }
+            blocked = remaining;
+        }
+        Self(Arc::new(blocked))
+    }
+
+    fn allows(&self, ip: IpAddr) -> bool {
+        !self.0.iter().any(|range| range.contains(&ip))
+    }
+}
+
+#[cfg(test)]
 fn public_ip(ip: IpAddr) -> bool {
-    !BLOCKED_NETS
-        .iter()
-        .any(|range| range.parse::<ipnet::IpNet>().unwrap().contains(&ip))
+    PublicResolver::new(&[]).allows(ip)
 }
 
 impl deno_runtime::deno_fetch::dns::Resolve for PublicResolver {
@@ -375,9 +510,10 @@ impl deno_runtime::deno_fetch::dns::Resolve for PublicResolver {
         name: hyper_util::client::legacy::connect::dns::Name,
     ) -> deno_runtime::deno_fetch::dns::Resolving {
         let name = name.as_str().to_owned();
+        let resolver = self.clone();
         Box::pin(async move {
             let addresses: Vec<_> = tokio::net::lookup_host((name.as_str(), 0)).await?.collect();
-            if addresses.is_empty() || addresses.iter().any(|addr| !public_ip(addr.ip())) {
+            if addresses.is_empty() || addresses.iter().any(|addr| !resolver.allows(addr.ip())) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "Private and reserved network addresses are not allowed",
@@ -498,7 +634,7 @@ mod tests {
         for _ in 0..2 {
             let result = executor.execute(source.clone()).await;
             assert_eq!(result.error, None, "{result:?}");
-            assert_eq!(result.output.as_deref(), Some("loaded:1:undefined:true"));
+            assert_eq!(result.output.as_deref(), Some("loaded:1:object:true"));
         }
         assert_eq!(
             hits.load(Ordering::SeqCst),
@@ -543,7 +679,7 @@ mod tests {
         server.abort();
         assert_eq!(
             executor.execute(source).await.output.as_deref(),
-            Some("loaded:1:undefined:true")
+            Some("loaded:1:object:true")
         );
 
         let public = ScriptExecutor::new(vec![], true, Duration::from_secs(3)).unwrap();
@@ -606,10 +742,7 @@ mod tests {
         let result = executor
             .execute_body("return [typeof Deno, typeof Worker, typeof navigator].join(',');".into())
             .await;
-        assert_eq!(
-            result.output.as_deref(),
-            Some("undefined,undefined,undefined")
-        );
+        assert_eq!(result.output.as_deref(), Some("object,undefined,undefined"));
         assert!(
             executor
                 .execute_body("await import('file:///etc/passwd'); return 'bad';".into())
@@ -697,6 +830,52 @@ mod tests {
     }
 
     #[test]
+    fn cidr_exceptions_preserve_neighbor_and_host_restrictions() {
+        let allowed = [
+            "198.18.1.0/24".parse().unwrap(),
+            "fd00::1/128".parse().unwrap(),
+        ];
+        let resolver = PublicResolver::new(&allowed);
+        for ip in ["198.18.1.0", "198.18.1.255", "fd00::1", "8.8.8.8"] {
+            assert!(resolver.allows(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in [
+            "198.18.0.255",
+            "198.18.2.0",
+            "198.19.0.1",
+            "fd00::2",
+            "127.0.0.1",
+        ] {
+            assert!(!resolver.allows(ip.parse().unwrap()), "{ip}");
+        }
+        let mut executor = ScriptExecutor::with_cidrs(vec![], true, TIMEOUT, &allowed).unwrap();
+        for (url, expected) in [
+            ("https://198.18.1.1/", true),
+            ("https://198.18.2.1/", false),
+            ("https://[fd00::1]/", true),
+            ("https://[fd00::2]/", false),
+        ] {
+            assert_eq!(
+                executor
+                    .permissions
+                    .check_net_url(&url.parse().unwrap(), "test")
+                    .is_ok(),
+                expected,
+                "{url}"
+            );
+        }
+        let mut restricted =
+            ScriptExecutor::with_cidrs(vec!["example.com".into()], true, TIMEOUT, &allowed)
+                .unwrap();
+        assert!(
+            restricted
+                .permissions
+                .check_net_url(&"https://198.18.1.1/".parse().unwrap(), "test")
+                .is_err()
+        );
+    }
+
+    #[test]
     fn rejects_non_public_ip_ranges() {
         for address in [
             "127.0.0.1",
@@ -711,6 +890,15 @@ mod tests {
             assert!(!public_ip(address.parse().unwrap()), "{address}");
         }
         assert!(public_ip("8.8.8.8".parse().unwrap()));
+        for address in ["198.18.0.0", "198.18.0.1", "198.19.255.255"] {
+            assert!(!public_ip(address.parse().unwrap()), "{address}");
+            assert!(
+                PublicResolver::new(&["198.18.0.0/15".parse().unwrap()])
+                    .allows(address.parse().unwrap()),
+                "{address}"
+            );
+        }
+        assert!(!public_ip("198.51.100.1".parse().unwrap()));
         assert!(public_ip("2606:4700:4700::1111".parse().unwrap()));
     }
 }
