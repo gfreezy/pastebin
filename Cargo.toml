@@ -38,3 +38,7 @@ urlencoding = "2.1"
 
 [profile.dev]
 debug = 0
+
+[profile.release]
+strip = true
+lto = "thin"
