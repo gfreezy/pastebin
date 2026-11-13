@@ -1,10 +1,10 @@
-<section id="script-preview" class="preview panel hidden" aria-label="JavaScript preview">
-  <div class="panel-head"><span class="panel-title">Preview</span><div class="actions"><button type="button" class="btn btn-small" data-expand="script-preview" aria-label="Expand preview" aria-pressed="false">Full screen</button><button type="button" class="btn btn-small hidden" id="copy-output">Copy result</button><button type="button" class="btn btn-primary btn-small" id="run-script">Run preview</button></div></div>
+<dialog id="script-preview" class="preview dialog preview-dialog" aria-labelledby="preview-title">
+  <div class="panel-head"><span class="panel-title" id="preview-title">JavaScript preview</span><div class="actions"><button type="button" class="btn btn-small hidden" id="copy-output">Copy result</button><button type="button" class="btn btn-primary btn-small" id="run-script-again">Run again</button><button type="button" class="btn btn-small" id="close-preview" autofocus>Close</button></div></div>
   <div id="preview-empty" class="preview-empty"><strong>Your output appears here</strong><span>Run the script to see its result and logs.</span><span>⌘ / Ctrl + Enter to run</span></div>
   <pre id="script-output" class="preview-output hidden" tabindex="0" aria-label="Execution result"></pre>
   <div id="run-status" class="preview-status" role="status">Ready to run · Preview does not save or update the cache.</div>
   <details class="logs" id="preview-logs"><summary>Console <span id="log-count">0</span></summary><pre id="script-logs">No logs yet.</pre></details>
-</section>
+</dialog>
 {% include "schedule_builder_script.html" %}
 {% raw %}
 <script>
@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
  const mode = document.getElementById('execution-mode');
  const choices = [...document.querySelectorAll('[name=execution-choice]')];
  const panel = document.getElementById('script-preview'), button = document.getElementById('run-script'), status = document.getElementById('run-status');
+ const again = document.getElementById('run-script-again');
+ document.getElementById('close-preview').addEventListener('click',()=>panel.close());
  const output = document.getElementById('script-output'), logs = document.getElementById('script-logs'), empty = document.getElementById('preview-empty'), copy = document.getElementById('copy-output');
  const builder = ScheduleBuilder.init(scheduler,mode,kind);
  let revision = 0, running = false, hasRun = false, hasOutput = false, lastOutput = '';
@@ -32,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
   revision++;
   const js = kind.value === 'javascript';
   if(document.getElementById('schedule-controls').classList.contains('hidden') === js) scheduleChanged();
-  panel.classList.toggle('hidden', !js); document.getElementById('workspace').classList.toggle('has-preview', js);
+  if(!js && panel.open) panel.close();
   document.querySelectorAll('[data-js-only]').forEach(el => el.classList.toggle('hidden', !js));
   document.getElementById('content-label').textContent = js ? 'JavaScript' : 'Content';
   document.getElementById('char-count').textContent = `${code.value.length.toLocaleString()} characters`;
@@ -60,9 +62,13 @@ document.addEventListener('DOMContentLoaded', () => {
  },0); });
  scheduleChanged(true);changed();
  copy.addEventListener('click', () => { if(hasOutput) PasteUI.copy(lastOutput, copy); });
- button.addEventListener('click', async () => {
-  if(!code.value.trim()) { status.textContent='Enter JavaScript before running.';status.dataset.state='error';code.focus();return; }
-  const runRevision=revision; running=true;button.disabled=true;button.textContent='Running…'; status.textContent='Executing script…';status.dataset.state='';
+ async function runPreview() {
+  if(!panel.open) panel.showModal();
+  if(running) return;
+  if(!code.value.trim()) { status.textContent='Enter JavaScript before running.';status.dataset.state='error';return; }
+  const runRevision=revision; running=true;button.disabled=true;again.disabled=true;button.textContent='Running…';again.textContent='Running…';
+  hasOutput=false;copy.classList.add('hidden');output.classList.add('hidden');empty.classList.remove('hidden');empty.querySelector('strong').textContent='Running script…';
+  logs.textContent='Waiting for execution to finish…';document.getElementById('log-count').textContent='0'; status.textContent='Executing script…';status.dataset.state='';
   try {
    const response = await fetch('/api/script-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:code.value})});
    if(!response.ok) throw new Error(response.status===401 ? 'Your session expired. Sign in again before running.' : await response.text());
@@ -77,9 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
    status.textContent=`${result.error?'Execution failed':'Completed'} · ${result.duration_ms.toLocaleString()} ms · Preview only`;
    status.dataset.state=result.error?'error':'success';
   } catch(error) { if(runRevision===revision) {status.textContent=error.message;status.dataset.state='error';} }
-  finally {running=false;button.disabled=false;button.textContent='Run preview';}
- });
- document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&kind.value==='javascript'&&!panel.closest('dialog:not([open])')) {e.preventDefault();if(!running)button.click();}});
+  finally {running=false;button.disabled=false;again.disabled=false;button.textContent='Run preview';again.textContent='Run again';empty.querySelector('strong').textContent='No result yet';}
+ }
+ button.addEventListener('click',runPreview);again.addEventListener('click',runPreview);
+ document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&kind.value==='javascript') {e.preventDefault();if(!running)button.click();}});
 });
 </script>
 {% endraw %}

@@ -1,0 +1,74 @@
+{% include "js_highlight_vendor.html" %}
+{% raw %}
+<style>
+.source-editor{position:relative;flex:none;height:clamp(280px,50vh,560px);min-height:180px;resize:vertical;overflow:hidden;display:flex;flex-direction:column;isolation:isolate}
+.source-editor>.editor{height:100%;min-height:0;resize:none}
+.source-highlight{display:none;position:absolute;top:0;left:0;margin:0;border:0;border-radius:0;pointer-events:none;overflow:hidden;white-space:pre;overflow-wrap:normal;color:var(--ink);background:white;tab-size:2;z-index:0}
+.source-editor.syntax-active .source-highlight{display:block}
+.source-editor.syntax-active textarea.editor{position:relative;z-index:1;color:transparent;-webkit-text-fill-color:transparent;caret-color:var(--ink);background:transparent;white-space:pre;overflow-wrap:normal}
+.source-editor.syntax-active textarea.editor::selection{background:#cbdcff;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+.source-editor.syntax-active textarea.editor::placeholder{color:var(--muted);-webkit-text-fill-color:var(--muted)}
+.source-editor.syntax-active textarea.editor:read-only{background:transparent}
+.source-highlight .token.comment,.source-highlight .token.prolog{color:#697789}
+.source-highlight .token.keyword{color:#8c2ca0}
+.source-highlight .token.string,.source-highlight .token.template-string>.token.string{color:#257046}
+.source-highlight .token.number,.source-highlight .token.boolean,.source-highlight .token.constant{color:#a54d0c}
+.source-highlight .token.function,.source-highlight .token.class-name{color:#205fb2}
+.source-highlight .token.operator,.source-highlight .token.punctuation{color:#526175}
+.source-highlight .token.regex{color:#b03344}
+.source-highlight .token.interpolation-punctuation{color:#8c2ca0}
+.panel-expanded>.source-editor{flex:1;height:auto!important;min-height:0;overflow:hidden;resize:none}
+.panel-expanded>.source-editor>.editor{height:100%;min-height:0;resize:none}
+@media(forced-colors:active){.source-editor.syntax-active .source-highlight{display:none}.source-editor.syntax-active textarea.editor{color:CanvasText;-webkit-text-fill-color:CanvasText;caret-color:CanvasText}}
+</style>
+<script>
+(() => {
+  const textarea = document.querySelector('#f-content, #edit-content');
+  const kind = document.querySelector('#f-kind, #edit-kind');
+  if (!textarea || !kind || !window.Prism?.languages.javascript) return;
+  const container = document.createElement('div');
+  container.className = 'source-editor';
+  textarea.before(container);
+  const highlight = document.createElement('pre');
+  highlight.className = 'source-highlight';
+  highlight.setAttribute('aria-hidden', 'true');
+  container.append(highlight, textarea);
+  const originalWrap = textarea.getAttribute('wrap');
+  let frame = 0, previous = null, active = false;
+  function layout() {
+    const style = getComputedStyle(textarea);
+    highlight.style.font = style.font;
+    highlight.style.letterSpacing = style.letterSpacing;
+    highlight.style.padding = style.padding;
+    highlight.style.width = textarea.clientWidth + 'px';
+    highlight.style.height = textarea.clientHeight + 'px';
+    highlight.scrollTop = textarea.scrollTop;
+    highlight.scrollLeft = textarea.scrollLeft;
+  }
+  function render() {
+    frame = 0;
+    const enabled = kind.value === 'javascript' && textarea.value.length <= 256 * 1024;
+    if (enabled !== active) {
+      active = enabled;
+      container.classList.toggle('syntax-active', active);
+      if (active) textarea.setAttribute('wrap', 'off');
+      else if (originalWrap === null) textarea.removeAttribute('wrap');
+      else textarea.setAttribute('wrap', originalWrap);
+    }
+    if (active && previous !== textarea.value) {
+      // Prism escapes source before producing markup; script contents are never evaluated.
+      highlight.innerHTML = Prism.highlight(textarea.value + '\n', Prism.languages.javascript, 'javascript');
+      previous = textarea.value;
+    }
+    layout();
+  }
+  function schedule() { if (!frame) frame = requestAnimationFrame(render); }
+  textarea.addEventListener('input', schedule);
+  textarea.addEventListener('scroll', layout, {passive:true});
+  kind.addEventListener('change', schedule);
+  kind.addEventListener('input', schedule);
+  new ResizeObserver(layout).observe(textarea);
+  render();
+})();
+</script>
+{% endraw %}

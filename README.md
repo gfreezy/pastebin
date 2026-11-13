@@ -121,13 +121,16 @@ Pastes support `kind=text` (the default, including existing records) and
 (V8); no Deno CLI or Node installation is required. The Docker build includes the
 runtime in the application executable.
 
-In the create/edit page, select **JavaScript** and use **Run preview** to execute
-unsaved code. The result, console logs, errors, and elapsed time appear on the
-page. Preview makes real HTTP requests, including POST requests. Saving code does
+In the create/edit page, expand **Paste settings**, select **JavaScript**, and use
+**Run preview** to execute unsaved code. The result, console logs, errors, and
+elapsed time appear in a dialog, opened only when running a preview. Close it with
+**Close** or **Esc**. Preview makes real HTTP requests, including POST requests. Saving code does
 not require a successful preview.
 
 Create pastes at `/new`; use **Edit paste** to open `/pastes/<id>/edit`.
-Both are full pages. The editor, preview, and current cached result each have a
+Both are full pages with settings collapsed by default. JavaScript source is
+syntax-highlighted in both the editor and read-only view using bundled PrismJS;
+no external CDN is needed. The editor and current cached result each have a
 **Full screen** toggle; press **Esc** to return to the page without losing changes.
 The edit page also supports Public/Private visibility, changing or generating an
 access key, and changing/removing the expiration. Saving returns to the detail

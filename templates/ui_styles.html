@@ -15,4 +15,33 @@ input:not([type=file]),select{height:40px;line-height:20px;padding:9px 12px}sele
 @media(max-width:560px){.schedule-builder-fields>.field,.schedule-builder-fields>.field:first-child{flex:1 1 140px}.schedule-builder-fields>.field:first-child{flex-basis:100%}.schedule-summary{padding:10px}}
 .settings-panel>.advanced{margin:20px 0 0}.access-settings{border-top:1px solid var(--line);margin-top:20px;padding-top:20px}.access-settings h2{font-size:13px}.access-settings .advanced-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.key-input{display:flex;gap:6px;align-items:center}.key-input input{min-width:0;flex:1}.panel-head .actions{justify-content:flex-end}.panel-expanded{position:fixed!important;inset:0!important;z-index:1100!important;width:100vw!important;height:100dvh!important;max-width:none!important;max-height:none!important;margin:0!important;border:0!important;border-radius:0!important;background:white!important;display:flex!important;flex-direction:column!important;overflow:hidden!important}.panel-expanded>.panel-head,.panel-expanded>.cached-result-heading{flex-shrink:0}.panel-expanded>.editor,.panel-expanded>.preview-output,.panel-expanded>.preview-empty,.panel-expanded>.cached-output{flex:1;min-height:0;max-height:none;overflow:auto;resize:none}.panel-expanded>.editor-footer{flex-shrink:0}.panel-expanded>.logs{max-height:30vh;overflow:auto}.panel-expanded .panel-head{min-height:60px}.panel-expanded>.cache-empty{flex:1}.panel-expanded .editor{font-size:14px}.key-input .btn{flex-shrink:0}
 @media(max-width:560px){.access-settings .advanced-grid{grid-template-columns:1fr}.panel-head{align-items:flex-start;flex-wrap:wrap}.panel-head .actions{gap:5px;flex:1}.panel-expanded .panel-head{flex-wrap:wrap}.cached-result-heading{flex-wrap:wrap}}
+
+/* Consistent native selects, with a single custom disclosure arrow. */
+select:not([multiple]){appearance:none;-webkit-appearance:none;background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23677588' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:16px;padding:9px 38px 9px 12px;line-height:20px;min-height:40px;vertical-align:middle;text-overflow:ellipsis;color:var(--ink)}
+select:not([multiple]):hover:not(:disabled){border-color:#aab8c9}
+select:disabled{background-color:#f4f6f9;color:var(--muted);cursor:not-allowed;opacity:1}
+select option{background:white;color:var(--ink)}
+.collapsible-settings.settings-panel{padding:0;margin-bottom:16px}
+.settings-toggle{display:flex;align-items:center;gap:14px;padding:13px 18px;cursor:pointer;list-style:none;min-height:48px}
+.settings-toggle::-webkit-details-marker{display:none}
+.settings-toggle:hover{background:#fafbfd}
+.settings-toggle-title{font-weight:600;white-space:nowrap;font-size:13px}
+.settings-overview{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:12px}
+.settings-toggle-action{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;gap:6px;color:#526175;font-size:12px;line-height:18px;white-space:nowrap;margin-left:auto;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:white}
+.settings-chevron{display:block;flex:0 0 16px;width:16px;height:16px;transition:transform .15s}
+.settings-toggle:hover .settings-toggle-action{background:#eef3fb;border-color:#b9c8dd;color:var(--accent)}
+.collapsible-settings[open] .settings-chevron{transform:rotate(180deg)}
+.collapsible-settings:not([open]) .when-open,.collapsible-settings[open] .when-closed{display:none}
+.collapsible-settings[open]>.settings-toggle{border-bottom:1px solid var(--line)}
+.settings-content{padding:18px}
+.settings-content>.advanced{margin:18px 0 0}
+@media(max-width:560px){.settings-toggle{gap:10px;padding:12px 14px}.settings-content{padding:14px}.settings-toggle-action .when-open,.settings-toggle-action .when-closed{display:none}}
+@media(forced-colors:active){select:not([multiple]){appearance:auto;background-image:none}}
+
+.preview-dialog{width:min(960px,calc(100vw - 32px));padding:0;max-height:85dvh}
+.preview-dialog:not([open]){display:none}
+.preview-dialog[open]{display:flex;flex-direction:column}
+.preview-dialog>.panel-head,.preview-dialog>.preview-status{flex-shrink:0}
+.preview-dialog>.preview-output,.preview-dialog>.preview-empty{min-height:180px;max-height:55dvh;overflow:auto;flex:1}
+.preview-dialog>.logs{max-height:24dvh;overflow:auto;flex-shrink:0}
 </style>
