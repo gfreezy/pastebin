@@ -343,7 +343,7 @@ Download these artifacts from the workflow run's **Artifacts** section:
 
 - `pastebin-js-x86_64-unknown-linux-gnu` — Linux x86_64, built on Ubuntu 22.04
   (requires compatible glibc/system libraries; not a fully static musl binary).
-- `pastebin-js-aarch64-apple-darwin` — macOS Apple Silicon, built on macOS 14.
+- `pastebin-js-aarch64-apple-darwin` — macOS Apple Silicon, built on macOS 15.
 
 Each artifact contains a `.tar.gz` archive (preserving executable permissions)
 and `SHA256SUMS`. Extract it and run `./pastebin-js hello.js`. macOS builds are
