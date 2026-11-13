@@ -347,5 +347,11 @@ Download these artifacts from the workflow run's **Artifacts** section:
 
 Each artifact contains a `.tar.gz` archive (preserving executable permissions)
 and `SHA256SUMS`. Extract it and run `./pastebin-js hello.js`. macOS builds are
-unsigned and not notarized. The workflow uploads CI artifacts for 30 days; it
-does not publish GitHub Releases or deploy the web application.
+unsigned and not notarized. The workflow uploads CI artifacts for 30 days.
+
+Pushing a `v*` tag automatically publishes a GitHub Release after both platform
+builds and smoke tests succeed. The release contains both `.tar.gz` archives and
+a combined `SHA256SUMS`, verified against the build artifacts before publishing.
+Release notes are generated automatically. Rerunning the tag workflow updates
+the assets on the existing release. Pushes to `main`, pull requests, and manual
+dispatches only upload CI artifacts; this workflow does not deploy the web app.
